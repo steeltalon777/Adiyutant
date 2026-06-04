@@ -1,0 +1,40 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Rust future artifacts
+target/
+Cargo.lock
+
+# Node / web future artifacts
+node_modules/
+dist/
+build/
+
+# .NET future artifacts
+bin/
+obj/
+
+# Android future artifacts
+.gradle/
+local.properties
+*.apk
+*.aab
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+*.log
+logs/
