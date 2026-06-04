@@ -2,7 +2,7 @@
 
 ## Current
 
-- [x] TASK-0000 — Empty Repository Bootstrap
+None (dev branch ready for next task).
 
 ## Next
 
@@ -12,4 +12,4 @@
 
 ## Done
 
-Empty for now.
+- [x] TASK-0000 — Empty Repository Bootstrap (archived to docs/archive/)

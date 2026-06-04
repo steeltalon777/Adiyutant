@@ -1,0 +1,13 @@
+[package]
+name = "adiyutant_cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "adiyutant"
+path = "src/main.rs"
+
+[dependencies]
+adiyutant_core = { path = "../adiyutant_core" }
+adiyutant_store = { path = "../adiyutant_store" }
+clap = { version = "4", features = ["derive"] }

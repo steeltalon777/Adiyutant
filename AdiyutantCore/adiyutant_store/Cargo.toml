@@ -1,0 +1,7 @@
+[package]
+name = "adiyutant_store"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+adiyutant_core = { path = "../adiyutant_core" }

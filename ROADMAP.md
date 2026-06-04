@@ -6,15 +6,15 @@ MVP 0.1 — local `AdiyutantCore` on Rust + SQLite + CLI.
 
 The core must prove that the organizer works without backend, sync, Android/Web/Desktop UI, external LLM, OpenClaw, or provider API keys.
 
-## Phase 0 — Repository Foundation
+## Phase 0 — Repository Foundation [x] Done
 
-**Current iteration: TASK-0000 — Empty Repository Bootstrap**
+**Completed: 2026-06-04**
 
 Goal: Create a repository that is immediately understandable to humans and AI agents.
 
-- Create bootstrap documentation structure
-- Define project boundaries
-- Mark all code as not yet implemented
+- [x] Create bootstrap documentation structure
+- [x] Define project boundaries
+- [x] Mark all code as not yet implemented
 
 ## Phase 1 — Rust Core Workspace
 

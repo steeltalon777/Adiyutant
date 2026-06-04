@@ -1,9 +1,28 @@
 # AdiyutantCore
 
-Status: Planned / not implemented yet.
+Status: Current — Rust workspace active.
 
-AdiyutantCore is planned as the Rust local-first domain core for Adiyutant.
+AdiyutantCore is the Rust local-first domain core for Adiyutant.
 
-It will own domain models, local storage, local rules, CLI validation, and future sync state preparation.
+## Crates
 
-No Rust workspace is created in TASK-0000.
+- `adiyutant_core` — base types: `Id<T>`, `CoreError`, `AdiyutantDateTime`
+- `adiyutant_store` — storage abstraction (`Store` trait)
+- `adiyutant_cli` — CLI entrypoint (`adiyutant` binary)
+
+## Quick Start
+
+```bash
+cargo check --workspace
+cargo test --workspace
+cargo run -p adiyutant_cli -- status
+```
+
+## Dependencies
+
+- chrono, serde, uuid, thiserror (workspace)
+- clap (cli crate)
+
+## Next Phase
+
+Phase 2 — Domain Model: DailyLog, CheckIn, Habit, and other domain entities.
