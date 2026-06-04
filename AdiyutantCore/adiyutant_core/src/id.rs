@@ -1,10 +1,34 @@
 use serde::{Deserialize, Serialize};
+use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Id<T> {
     value: Uuid,
     _marker: std::marker::PhantomData<T>,
+}
+
+// All manual impls to avoid conservative bounds from derive macros
+impl<T> Clone for Id<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for Id<T> {}
+
+impl<T> PartialEq for Id<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T> Eq for Id<T> {}
+
+impl<T> Hash for Id<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
 }
 
 impl<T> Id<T> {
