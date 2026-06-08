@@ -4,7 +4,7 @@ Rules for AI coding agents working in this repository.
 
 ## Repository Status
 
-This repository is in **bootstrap state**. No application code exists.
+**MVP 0.1 in progress.** Core Rust workspace with 3 crates: `adiyutant_core` (domain models, aggregator, local rules), `adiyutant_store` (SQLite persistence), `adiyutant_cli` (clap CLI with 9 commands). 100 tests pass.
 
 ## Primary Priority
 
@@ -12,22 +12,27 @@ Complete the current task without exceeding its scope. Do not add unrequested fe
 
 ## Allowed Changes
 
+- Rust source code in `AdiyutantCore/` workspace
 - Documentation files (markdown)
 - Directory structure
-- `.gitkeep` files in empty directories
 - `.gitignore`
 - `docs/adr/` files when explicitly requested
 
 ## Forbidden Changes
 
-- Do not invent implemented architecture.
-- Do not add source code during TASK-0000.
-- Do not add backend during TASK-0000.
-- Do not add LLM provider calls.
+- Do not add LLM provider calls to Core.
 - Do not store API keys in client projects.
-- Do not duplicate future Core domain logic in UI projects.
+- Do not duplicate Core domain logic in UI projects.
 - If a document conflicts with an ADR, ADR wins.
-- If code conflicts with docs in future, document the drift.
+- If code conflicts with docs, document the drift in ADR.
+
+## Current Tech Stack
+
+- **Language:** Rust (edition 2024)
+- **Build:** Cargo workspace in `AdiyutantCore/`
+- **Storage:** SQLite via `rusqlite` (bundled)
+- **CLI:** `clap` 4 with derive macros
+- **Testing:** `cargo test` (in-memory SQLite for store tests)
 
 ## Documentation Rules
 

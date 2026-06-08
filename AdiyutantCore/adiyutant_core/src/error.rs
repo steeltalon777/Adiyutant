@@ -10,6 +10,9 @@ pub enum CoreError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    #[error("storage error: {0}")]
+    Storage(String),
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;

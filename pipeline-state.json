@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "project": "ADIYUTANT",
+  "roadmap": "/home/makc/AI_sandbox/ADIYUTANT/ROADMAP.md",
+  "workdir": "/home/makc/AI_sandbox/ADIYUTANT",
+  "phases": {
+    "Phase 0 — Repository Foundation": {
+      "index": 0,
+      "status": "done",
+      "tz": null,
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Bootstrap completed 2026-06-04"
+    },
+    "Phase 1 — Rust Core Workspace": {
+      "index": 1,
+      "status": "done",
+      "tz": "docs/archive/phase-1-rust-core-workspace.md",
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Verified: workspace, 3 crates, error model, id, datetime. cargo check & test pass."
+    },
+    "Phase 2 — Domain Model": {
+      "index": 2,
+      "status": "done",
+      "tz": "docs/archive/phase-2-domain-model.md",
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Verified: all 10 domain models exist. cargo test: 48 tests pass."
+    },
+    "Phase 3 — Local Rules and Today State": {
+      "index": 3,
+      "status": "done",
+      "tz": "docs/archive/phase-3-local-rules-and-today-state.md",
+      "build_report": "docs/reports/phase-3-build.md",
+      "review_verdict": "docs/reports/phase-3-review.md",
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Accepted. TodayState aggregator + LocalRuleAgentGateway with 6 rules."
+    },
+    "Phase 4 — SQLite Storage": {
+      "index": 4,
+      "status": "done",
+      "tz": "docs/archive/phase-4.md",
+      "build_report": "docs/reports/phase-4-build.md",
+      "review_verdict": "docs/reports/phase-4-review.md",
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "ACCEPTED. SQLite schema + 23 integration tests. 89 tests total."
+    },
+    "Phase 5 — CLI MVP": {
+      "index": 5,
+      "status": "done",
+      "tz": "docs/archive/phase-5.md",
+      "build_report": "docs/reports/phase-5-build.md",
+      "review_verdict": "docs/reports/phase-5-review.md",
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "ACCEPTED. Full CLI with 9 commands. 100 tests total."
+    },
+    "Phase 6 — Stabilization": {
+      "index": 6,
+      "status": "pending",
+      "tz": null,
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": null
+    }
+  },
+  "current_phase": "Phase 6 — Stabilization",
+  "current_step": "architect",
+  "started_at": "2026-06-08T03:22:00Z",
+  "last_updated": "2026-06-08T03:23:00Z"
+}

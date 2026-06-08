@@ -38,3 +38,4 @@ local.properties
 # Logs
 *.log
 logs/
+docs/archive/

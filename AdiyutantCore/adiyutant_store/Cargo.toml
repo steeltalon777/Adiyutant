@@ -5,3 +5,8 @@ edition = "2024"
 
 [dependencies]
 adiyutant_core = { path = "../adiyutant_core" }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
