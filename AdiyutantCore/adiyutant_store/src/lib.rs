@@ -2766,4 +2766,339 @@ mod tests {
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id, plan.id);
     }
+
+    // ── 17. PlanItem: insert_and_get_plan_item ──
+    use adiyutant_core::model::checklist_run::ChecklistRun;
+    use adiyutant_core::model::checklist_template::{
+        ChecklistItem, ChecklistItemKind, ChecklistTemplate,
+    };
+    use adiyutant_core::model::day_plan::{PlanItem, PlanItemStatus};
+    use adiyutant_core::model::journal_entry::{JournalEntry, JournalEntryType};
+    use adiyutant_core::model::task_checkpoint::{CheckpointKind, TaskCheckpoint};
+
+    fn make_plan_item(daily_log_id: Id<DailyLog>) -> PlanItem {
+        PlanItem::new(daily_log_id, "Test task".into())
+    }
+
+    fn make_checklist_template() -> ChecklistTemplate {
+        let mut t = ChecklistTemplate::new("Morning Routine".into(), "morning".into());
+        t.items.push(ChecklistItem::new(
+            t.id,
+            "Did you sleep well?".into(),
+            ChecklistItemKind::Checkbox,
+            1,
+        ));
+        t
+    }
+
+    fn make_checklist_run(
+        template_id: Id<ChecklistTemplate>,
+        daily_log_id: Id<DailyLog>,
+    ) -> ChecklistRun {
+        ChecklistRun::new(template_id, daily_log_id)
+    }
+
+    fn make_journal_entry(daily_log_id: Id<DailyLog>) -> JournalEntry {
+        JournalEntry::new(daily_log_id, JournalEntryType::Note, "test entry".into())
+    }
+
+    #[test]
+    fn insert_and_get_plan_item() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let item = make_plan_item(log.id);
+        store.insert_plan_item(&item).unwrap();
+        let loaded = store.get_plan_item(item.id).unwrap().unwrap();
+        assert_eq!(loaded.title, "Test task");
+    }
+
+    #[test]
+    fn list_plan_items_by_log() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        store.insert_plan_item(&make_plan_item(log.id)).unwrap();
+        store.insert_plan_item(&make_plan_item(log.id)).unwrap();
+        assert_eq!(store.list_plan_items_by_log(log.id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn list_plan_items_by_status() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let mut item = make_plan_item(log.id);
+        item.status = PlanItemStatus::Waiting;
+        store.insert_plan_item(&item).unwrap();
+        let items = store
+            .list_plan_items_by_status(PlanItemStatus::Waiting)
+            .unwrap();
+        assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn update_plan_item() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let mut item = make_plan_item(log.id);
+        store.insert_plan_item(&item).unwrap();
+        item.status = PlanItemStatus::Started;
+        store.update_plan_item(&item).unwrap();
+        assert_eq!(
+            store.get_plan_item(item.id).unwrap().unwrap().status,
+            PlanItemStatus::Started
+        );
+    }
+
+    #[test]
+    fn list_plan_items_due_for_review() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let mut item = make_plan_item(log.id);
+        item.status = PlanItemStatus::Waiting;
+        item.waiting_review_at = Some(NaiveDate::from_ymd_opt(2026, 6, 9).unwrap());
+        store.insert_plan_item(&item).unwrap();
+        let items = store
+            .list_plan_items_due_for_review(NaiveDate::from_ymd_opt(2026, 6, 9).unwrap())
+            .unwrap();
+        assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn delete_plan_item() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let item = make_plan_item(log.id);
+        store.insert_plan_item(&item).unwrap();
+        store.delete_plan_item(item.id).unwrap();
+        assert!(store.get_plan_item(item.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn insert_and_get_task_checkpoint() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let item = make_plan_item(log.id);
+        store.insert_plan_item(&item).unwrap();
+        let cp = TaskCheckpoint::new(item.id, CheckpointKind::ProgressCheck);
+        store.insert_task_checkpoint(&cp).unwrap();
+        let loaded = store.get_task_checkpoint(cp.id).unwrap().unwrap();
+        assert_eq!(
+            loaded.status,
+            adiyutant_core::model::task_checkpoint::CheckpointStatus::Pending
+        );
+    }
+
+    #[test]
+    fn list_checkpoints_by_plan_item() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let item = make_plan_item(log.id);
+        store.insert_plan_item(&item).unwrap();
+        store
+            .insert_task_checkpoint(&TaskCheckpoint::new(item.id, CheckpointKind::StartCheck))
+            .unwrap();
+        store
+            .insert_task_checkpoint(&TaskCheckpoint::new(item.id, CheckpointKind::FinishCheck))
+            .unwrap();
+        let cps = store.list_checkpoints_by_plan_item(item.id).unwrap();
+        assert_eq!(cps.len(), 2);
+    }
+
+    #[test]
+    fn update_task_checkpoint() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let item = make_plan_item(log.id);
+        store.insert_plan_item(&item).unwrap();
+        let mut cp = TaskCheckpoint::new(item.id, CheckpointKind::ProgressCheck);
+        store.insert_task_checkpoint(&cp).unwrap();
+        cp.response = Some(adiyutant_core::model::task_checkpoint::CheckpointResponse::Done);
+        store.update_task_checkpoint(&cp).unwrap();
+    }
+
+    #[test]
+    fn delete_task_checkpoint() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let item = make_plan_item(log.id);
+        store.insert_plan_item(&item).unwrap();
+        let cp = TaskCheckpoint::new(item.id, CheckpointKind::StartCheck);
+        store.insert_task_checkpoint(&cp).unwrap();
+        store.delete_task_checkpoint(cp.id).unwrap();
+        assert!(store.get_task_checkpoint(cp.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn insert_and_get_checklist_template() {
+        let store = setup();
+        let t = make_checklist_template();
+        store.insert_checklist_template(&t).unwrap();
+        let loaded = store.get_checklist_template(t.id).unwrap().unwrap();
+        assert_eq!(loaded.title, "Morning Routine");
+    }
+
+    #[test]
+    fn list_checklist_templates() {
+        let store = setup();
+        store
+            .insert_checklist_template(&make_checklist_template())
+            .unwrap();
+        store
+            .insert_checklist_template(&ChecklistTemplate::new(
+                "Evening Wind-Down".into(),
+                "evening".into(),
+            ))
+            .unwrap();
+        assert_eq!(store.list_checklist_templates().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn list_checklist_templates_by_category() {
+        let store = setup();
+        store
+            .insert_checklist_template(&make_checklist_template())
+            .unwrap();
+        let items = store
+            .list_checklist_templates_by_category("morning")
+            .unwrap();
+        assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn update_checklist_template() {
+        let store = setup();
+        let mut t = make_checklist_template();
+        store.insert_checklist_template(&t).unwrap();
+        t.title = "Updated".into();
+        store.update_checklist_template(&t).unwrap();
+        assert_eq!(
+            store.get_checklist_template(t.id).unwrap().unwrap().title,
+            "Updated"
+        );
+    }
+
+    #[test]
+    fn delete_checklist_template() {
+        let store = setup();
+        let t = make_checklist_template();
+        store.insert_checklist_template(&t).unwrap();
+        store.delete_checklist_template(t.id).unwrap();
+        assert!(store.get_checklist_template(t.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn insert_and_get_checklist_run() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let t = make_checklist_template();
+        store.insert_checklist_template(&t).unwrap();
+        let run = make_checklist_run(t.id, log.id);
+        store.insert_checklist_run(&run).unwrap();
+        let loaded = store.get_checklist_run(run.id).unwrap().unwrap();
+        assert!(loaded.completed_at.is_none());
+    }
+
+    #[test]
+    fn list_checklist_runs_by_log() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let t = make_checklist_template();
+        store.insert_checklist_template(&t).unwrap();
+        store
+            .insert_checklist_run(&make_checklist_run(t.id, log.id))
+            .unwrap();
+        assert_eq!(store.list_checklist_runs_by_log(log.id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn update_checklist_run() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let t = make_checklist_template();
+        store.insert_checklist_template(&t).unwrap();
+        let mut run = make_checklist_run(t.id, log.id);
+        store.insert_checklist_run(&run).unwrap();
+        run.completed_at = Some(adiyutant_core::datetime::AdiyutantDateTime::now());
+        store.update_checklist_run(&run).unwrap();
+    }
+
+    #[test]
+    fn delete_checklist_run() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let t = make_checklist_template();
+        store.insert_checklist_template(&t).unwrap();
+        let run = make_checklist_run(t.id, log.id);
+        store.insert_checklist_run(&run).unwrap();
+        store.delete_checklist_run(run.id).unwrap();
+        assert!(store.get_checklist_run(run.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn insert_and_get_journal_entry() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let entry = make_journal_entry(log.id);
+        store.insert_journal_entry(&entry).unwrap();
+        let loaded = store.get_journal_entry(entry.id).unwrap().unwrap();
+        assert_eq!(loaded.summary, "test entry");
+    }
+
+    #[test]
+    fn list_journal_entries_by_log() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        store
+            .insert_journal_entry(&make_journal_entry(log.id))
+            .unwrap();
+        store
+            .insert_journal_entry(&JournalEntry::new(
+                log.id,
+                JournalEntryType::TaskDone,
+                "done".into(),
+            ))
+            .unwrap();
+        assert_eq!(store.list_journal_entries_by_log(log.id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn update_journal_entry() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let mut entry = make_journal_entry(log.id);
+        store.insert_journal_entry(&entry).unwrap();
+        entry.summary = "updated".into();
+        store.update_journal_entry(&entry).unwrap();
+        assert_eq!(
+            store.get_journal_entry(entry.id).unwrap().unwrap().summary,
+            "updated"
+        );
+    }
+
+    #[test]
+    fn delete_journal_entry() {
+        let store = setup();
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+        let entry = make_journal_entry(log.id);
+        store.insert_journal_entry(&entry).unwrap();
+        store.delete_journal_entry(entry.id).unwrap();
+        assert!(store.get_journal_entry(entry.id).unwrap().is_none());
+    }
 }

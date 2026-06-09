@@ -98,7 +98,8 @@ fn main() {
         }
         Commands::Checkin(args) => {
             let store = init_store_or_exit();
-            daily::cmd_checkin(&store, args);
+            let facade = build_facade(store);
+            daily::cmd_checkin(&facade, args);
         }
         Commands::Startup => {
             let store = init_store_or_exit();
@@ -147,27 +148,33 @@ fn main() {
         }
         Commands::Habit { cmd } => {
             let store = init_store_or_exit();
-            habit::handle(&store, cmd);
+            let facade = build_facade(store);
+            habit::handle(&facade, cmd);
         }
         Commands::Timer { cmd } => {
             let store = init_store_or_exit();
-            time::handle_timer(&store, cmd);
+            let facade = build_facade(store);
+            time::handle_timer(&facade, cmd);
         }
         Commands::Reminder { cmd } => {
             let store = init_store_or_exit();
-            time::handle_reminder(&store, cmd);
+            let facade = build_facade(store);
+            time::handle_reminder(&facade, cmd);
         }
         Commands::Alarm { cmd } => {
             let store = init_store_or_exit();
-            time::handle_alarm(&store, cmd);
+            let facade = build_facade(store);
+            time::handle_alarm(&facade, cmd);
         }
         Commands::Context { cmd } => {
             let store = init_store_or_exit();
-            context::handle(&store, cmd);
+            let facade = build_facade(store);
+            context::handle(&facade, cmd);
         }
         Commands::Suggest => {
             let store = init_store_or_exit();
-            suggest::cmd_suggest(&store);
+            let facade = build_facade(store);
+            suggest::cmd_suggest(&facade);
         }
         Commands::Journal { cmd } => {
             let store = init_store_or_exit();

@@ -1,6 +1,4 @@
-use adiyutant_core::model::habit::Habit;
-use adiyutant_core::model::habit_event::{HabitEvent, HabitEventLevel, HabitEventStatus};
-use adiyutant_core::store::Store;
+use adiyutant_core::service::AdiyutantCoreService;
 
 #[derive(clap::Subcommand, Debug)]
 pub enum HabitCmd {
@@ -13,20 +11,20 @@ pub enum HabitCmd {
     List,
     /// Mark a habit as done
     Done {
-        /// Habit name (first match)
+        /// Habit name (matched case-insensitively) or ID
         name: String,
         /// Level: min, light, base, full
-        #[arg(short, long, default_value = "base")]
+        #[arg(long, default_value = "base")]
         level: LevelArg,
     },
-    /// Skip a habit today
+    /// Skip a habit
     Skip {
-        /// Habit name (first match)
+        /// Habit name or ID
         name: String,
     },
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, PartialEq)]
+#[derive(clap::ValueEnum, Debug, Clone)]
 pub enum LevelArg {
     Min,
     Light,
@@ -35,119 +33,68 @@ pub enum LevelArg {
 }
 
 impl LevelArg {
-    fn to_domain(&self) -> HabitEventLevel {
+    fn as_str(&self) -> &'static str {
         match self {
-            LevelArg::Min => HabitEventLevel::Min,
-            LevelArg::Light => HabitEventLevel::Light,
-            LevelArg::Base => HabitEventLevel::Base,
-            LevelArg::Full => HabitEventLevel::Full,
+            LevelArg::Min => "min",
+            LevelArg::Light => "light",
+            LevelArg::Base => "base",
+            LevelArg::Full => "full",
         }
     }
 }
 
-/// Find a habit by name (first match).
-fn find_habit_by_name(store: &adiyutant_store::SqliteStore, name: &str) -> Option<Habit> {
-    store
-        .list_habits()
-        .ok()?
-        .into_iter()
-        .find(|h| h.name == name)
-}
-
-/// Handle habit subcommands.
-pub fn handle(store: &adiyutant_store::SqliteStore, cmd: &HabitCmd) {
+pub fn handle(facade: &AdiyutantCoreService, cmd: &HabitCmd) {
     match cmd {
-        HabitCmd::Add { name } => cmd_add(store, name),
-        HabitCmd::List => cmd_list(store),
-        HabitCmd::Done { name, level } => cmd_done(store, name, level),
-        HabitCmd::Skip { name } => cmd_skip(store, name),
-    }
-}
-
-fn cmd_add(store: &adiyutant_store::SqliteStore, name: &str) {
-    let habit = Habit::new(name.to_string());
-    match store.insert_habit(&habit) {
-        Ok(()) => println!("✅ Habit \"{name}\" created."),
-        Err(e) => {
-            eprintln!("Error creating habit: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_list(store: &adiyutant_store::SqliteStore) {
-    match store.list_habits() {
-        Ok(habits) => {
-            if habits.is_empty() {
-                println!("No habits yet. Use `adiyutant habit add <name>` to create one.");
-                return;
+        HabitCmd::Add { name } => match facade.add_habit(name) {
+            Ok(id) => println!("✅ Habit added: {name} (ID: {id})"),
+            Err(e) => {
+                eprintln!("Error adding habit: {e}");
+                std::process::exit(1);
             }
-            println!("📋 Habits ({}):", habits.len());
-            for h in &habits {
-                let status = if h.is_active { "active" } else { "inactive" };
-                println!("  • {} — {status}", h.name);
+        },
+        HabitCmd::List => match facade.list_habits() {
+            Ok(habits) => {
+                if habits.is_empty() {
+                    println!("No habits tracked.");
+                } else {
+                    println!("📋 Habits:");
+                    for (id, name, active) in &habits {
+                        let status = if *active { "" } else { " (inactive)" };
+                        println!("  • {name}{status} — {id}");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error listing habits: {e}");
+                std::process::exit(1);
+            }
+        },
+        HabitCmd::Done { name, level } => {
+            match facade.mark_habit_done(name, Some(level.as_str())) {
+                Ok(id) => println!("✅ Habit done (event ID: {id})"),
+                Err(e) => {
+                    eprintln!("Error marking habit done: {e}");
+                    std::process::exit(1);
+                }
             }
         }
-        Err(e) => {
-            eprintln!("Error listing habits: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_done(store: &adiyutant_store::SqliteStore, name: &str, level: &LevelArg) {
-    let habit = match find_habit_by_name(store, name) {
-        Some(h) => h,
-        None => {
-            eprintln!("Habit \"{name}\" not found.");
-            std::process::exit(1);
-        }
-    };
-
-    let event = HabitEvent::new(habit.id, HabitEventStatus::Done, level.to_domain());
-    match store.insert_habit_event(&event) {
-        Ok(()) => {
-            let level_name = format!("{:?}", level).to_lowercase();
-            println!("✅ {name} done ({level_name})");
-        }
-        Err(e) => {
-            eprintln!("Error recording habit event: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_skip(store: &adiyutant_store::SqliteStore, name: &str) {
-    let habit = match find_habit_by_name(store, name) {
-        Some(h) => h,
-        None => {
-            eprintln!("Habit \"{name}\" not found.");
-            std::process::exit(1);
-        }
-    };
-
-    let event = HabitEvent::new(habit.id, HabitEventStatus::Skipped, HabitEventLevel::Base);
-    match store.insert_habit_event(&event) {
-        Ok(()) => {
-            println!("⏭️  {name} skipped");
-        }
-        Err(e) => {
-            eprintln!("Error recording habit event: {e}");
-            std::process::exit(1);
-        }
+        HabitCmd::Skip { name } => match facade.skip_habit(name) {
+            Ok(id) => println!("⏭ Habit skipped (event ID: {id})"),
+            Err(e) => {
+                eprintln!("Error skipping habit: {e}");
+                std::process::exit(1);
+            }
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adiyutant_core::model::habit_event::HabitEventLevel as DomainLevel;
 
     #[test]
-    fn level_arg_to_domain() {
-        assert_eq!(LevelArg::Min.to_domain(), DomainLevel::Min);
-        assert_eq!(LevelArg::Light.to_domain(), DomainLevel::Light);
-        assert_eq!(LevelArg::Base.to_domain(), DomainLevel::Base);
-        assert_eq!(LevelArg::Full.to_domain(), DomainLevel::Full);
+    fn level_arg_as_str() {
+        assert_eq!(LevelArg::Min.as_str(), "min");
+        assert_eq!(LevelArg::Base.as_str(), "base");
     }
 }

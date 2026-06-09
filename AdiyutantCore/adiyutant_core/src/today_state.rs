@@ -3,6 +3,7 @@ use crate::model::alarm::AlarmDefinition;
 use crate::model::check_in::{CheckIn, CheckInType};
 use crate::model::context_document::ContextDocument;
 use crate::model::daily_log::DailyLog;
+use crate::model::day_plan::PlanItem;
 use crate::model::habit::Habit;
 use crate::model::habit_event::HabitEvent;
 use crate::model::plan::Plan;
@@ -21,6 +22,8 @@ pub struct TodayState {
     pub habits: Vec<Habit>,
     pub habit_events: Vec<HabitEvent>,
     pub plan: Option<Plan>,
+    /// New-style plan items from `plan_items` table.
+    pub plan_items: Vec<PlanItem>,
     pub alarms: Vec<AlarmDefinition>,
     pub reminders: Vec<ReminderDefinition>,
     pub timers: Vec<TimerDefinition>,
@@ -44,8 +47,12 @@ impl TodayState {
     }
 
     /// Whether a plan with at least one item exists for today.
+    ///
+    /// Checks both legacy `plan` and new `plan_items`.
     pub fn has_plan(&self) -> bool {
-        self.plan.as_ref().is_some_and(|p| !p.items.is_empty())
+        let legacy_has = self.plan.as_ref().is_some_and(|p| !p.items.is_empty());
+        let new_has = !self.plan_items.is_empty();
+        legacy_has || new_has
     }
 
     /// How many habit events have been logged today.
@@ -53,14 +60,27 @@ impl TodayState {
         self.habit_events.len()
     }
 
-    /// How many plan items are not yet completed.
+    /// How many plan items (legacy + new) are not yet completed.
     pub fn pending_plan_items(&self) -> usize {
-        self.plan.as_ref().map_or(0, |p| {
+        let legacy_count = self.plan.as_ref().map_or(0, |p| {
             p.items
                 .iter()
                 .filter(|i| !matches!(i.status, crate::model::plan::PlanItemStatus::Done))
                 .count()
-        })
+        });
+        let new_count = self
+            .plan_items
+            .iter()
+            .filter(|i| {
+                !matches!(
+                    i.status,
+                    crate::model::day_plan::PlanItemStatus::Done
+                        | crate::model::day_plan::PlanItemStatus::Cancelled
+                        | crate::model::day_plan::PlanItemStatus::Archived
+                )
+            })
+            .count();
+        legacy_count + new_count
     }
 }
 
@@ -73,6 +93,7 @@ pub struct TodayStateBuilder {
     habits: Vec<Habit>,
     habit_events: Vec<HabitEvent>,
     plan: Option<Plan>,
+    plan_items: Vec<PlanItem>,
     alarms: Vec<AlarmDefinition>,
     reminders: Vec<ReminderDefinition>,
     timers: Vec<TimerDefinition>,
@@ -129,6 +150,17 @@ impl TodayStateBuilder {
         self
     }
 
+    /// Add new-style plan items.
+    pub fn plan_items(mut self, items: Vec<PlanItem>) -> Self {
+        self.plan_items = items;
+        self
+    }
+
+    pub fn plan_item(mut self, item: PlanItem) -> Self {
+        self.plan_items.push(item);
+        self
+    }
+
     pub fn alarm(mut self, a: AlarmDefinition) -> Self {
         self.alarms.push(a);
         self
@@ -179,6 +211,7 @@ impl TodayStateBuilder {
             habits: self.habits,
             habit_events: self.habit_events,
             plan: self.plan,
+            plan_items: self.plan_items,
             alarms: self.alarms,
             reminders: self.reminders,
             timers: self.timers,
@@ -261,12 +294,21 @@ mod tests {
     }
 
     #[test]
-    fn has_plan_true_with_items() {
+    fn has_plan_true_with_legacy_items() {
         let date = chrono::NaiveDate::from_ymd_opt(2026, 6, 8).unwrap();
         let log = DailyLog::new(date);
         let mut plan = Plan::new(log.id, "Today".into());
         plan.add_item("Do something".into());
         let state = TodayStateBuilder::new().date(date).plan(plan).build();
+        assert!(state.has_plan());
+    }
+
+    #[test]
+    fn has_plan_true_with_new_plan_items() {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 6, 8).unwrap();
+        let log_id = crate::id::Id::<DailyLog>::new();
+        let item = PlanItem::new(log_id, "New task".into());
+        let state = TodayStateBuilder::new().date(date).plan_item(item).build();
         assert!(state.has_plan());
     }
 

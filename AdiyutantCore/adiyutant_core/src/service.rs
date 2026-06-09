@@ -8,8 +8,11 @@ use crate::error::CoreError;
 use crate::id::Id;
 use crate::local_rule_gateway::LocalRuleAgentGateway;
 use crate::model::checklist_run::ChecklistRun;
+use crate::model::checklist_template::ChecklistTemplate;
+
 use crate::model::daily_log::DailyLog;
 use crate::model::day_plan::{EisenhowerQuadrant, PlanItem, PlanItemStatus, WaitingDecision};
+use crate::model::habit::Habit;
 use crate::model::habit_event::HabitEvent;
 use crate::model::journal_entry::{JournalEntry, JournalEntryType};
 use crate::model::task_checkpoint::{CheckpointKind, TaskCheckpoint};
@@ -47,6 +50,12 @@ impl AdiyutantCoreService {
             if let Some(plan) = self.store.get_plan_by_daily_log(log.id)? {
                 builder = builder.plan(plan);
             }
+        }
+
+        // PlanItems (new)
+        if let Some(log) = self.store.get_daily_log_by_date(today)? {
+            let plan_items = self.store.list_plan_items_by_log(log.id)?;
+            builder = builder.plan_items(plan_items);
         }
 
         // Habits
@@ -372,12 +381,82 @@ impl AdiyutantCoreService {
             .collect())
     }
 
+    /// Auto-seed a default checklist template for a category.
+    fn seed_default_checklist(&self, category: &str) -> Result<ChecklistTemplate, CoreError> {
+        use crate::model::checklist_template::{
+            ChecklistItem, ChecklistItemKind, ChecklistTemplate,
+        };
+
+        let (title, items) = match category {
+            "morning" => (
+                "Morning Check-in",
+                vec![
+                    ("Did you sleep well?", ChecklistItemKind::Scale),
+                    ("What is your energy level?", ChecklistItemKind::Scale),
+                    ("What is your mood?", ChecklistItemKind::Scale),
+                    ("Any notes for today?", ChecklistItemKind::Text),
+                ],
+            ),
+            "evening" => (
+                "Evening Review",
+                vec![
+                    ("How was your day?", ChecklistItemKind::Text),
+                    ("What went well?", ChecklistItemKind::Text),
+                    ("What could improve?", ChecklistItemKind::Text),
+                ],
+            ),
+            "shutdown" => (
+                "Shutdown Routine",
+                vec![
+                    ("Review completed tasks", ChecklistItemKind::Checkbox),
+                    ("Plan for tomorrow", ChecklistItemKind::Checkbox),
+                    ("Set alarms", ChecklistItemKind::Checkbox),
+                    ("Wind down time", ChecklistItemKind::Checkbox),
+                ],
+            ),
+            "day" => (
+                "Mid-day Check",
+                vec![
+                    ("How is your energy?", ChecklistItemKind::Scale),
+                    ("Are you on track?", ChecklistItemKind::Choice),
+                    ("Need to adjust plan?", ChecklistItemKind::Checkbox),
+                ],
+            ),
+            "recovery" => (
+                "Recovery Check",
+                vec![
+                    ("How are you feeling?", ChecklistItemKind::Scale),
+                    ("Rest enough?", ChecklistItemKind::Checkbox),
+                    ("Ready to resume?", ChecklistItemKind::Checkbox),
+                ],
+            ),
+            _ => return Err(CoreError::NotFound(format!("unknown category: {category}"))),
+        };
+
+        let mut template = ChecklistTemplate::new(title.to_string(), category.to_string());
+        for (i, (question, kind)) in items.iter().enumerate() {
+            template.items.push(ChecklistItem::new(
+                template.id,
+                question.to_string(),
+                *kind,
+                i as u32 + 1,
+            ));
+        }
+
+        self.store.insert_checklist_template(&template)?;
+        Ok(template)
+    }
+
     /// Run a checklist (start a run for the first matching template by category).
+    /// Auto-seeds a default template if none exists for the requested category.
     pub fn run_checklist(&self, category: &str) -> Result<ChecklistRunDto, CoreError> {
         let templates = self.store.list_checklist_templates_by_category(category)?;
-        let template = templates.first().ok_or_else(|| {
-            CoreError::NotFound(format!("no checklist template for category: {category}"))
-        })?;
+        let template = if let Some(t) = templates.first() {
+            t.clone()
+        } else {
+            // Auto-seed a default template for the requested category
+            self.seed_default_checklist(category)?
+        };
 
         let daily_log_id = self.get_or_create_today_log()?;
         let run = ChecklistRun::new(template.id, daily_log_id);
@@ -431,6 +510,237 @@ impl AdiyutantCoreService {
             timestamp: entry.timestamp.inner().to_rfc3339(),
         })
     }
+
+    // ── Check-In ───────────────────────────────
+
+    /// Create a check-in and optionally update daily log metrics.
+    pub fn create_checkin(
+        &self,
+        checkin_type: &str,
+        text: &str,
+        sleep_score: Option<u8>,
+        energy: Option<u8>,
+        mood: Option<u8>,
+    ) -> Result<String, CoreError> {
+        use crate::model::check_in::{CheckIn, CheckInType};
+        let daily_log_id = self.get_or_create_today_log()?;
+        let ci_type = match checkin_type {
+            "morning" => CheckInType::Morning,
+            "day" => CheckInType::Day,
+            "evening" => CheckInType::Evening,
+            "shutdown" => CheckInType::Shutdown,
+            _ => {
+                return Err(CoreError::InvalidInput(format!(
+                    "unknown checkin type: {checkin_type}"
+                )));
+            }
+        };
+        let ci = CheckIn::new(daily_log_id, ci_type, text.to_string());
+        self.store.insert_check_in(&ci)?;
+
+        if (sleep_score.is_some() || energy.is_some() || mood.is_some())
+            && let Some(log) = self.store.get_daily_log(daily_log_id)?
+        {
+            let mut updated = log.clone();
+            if let Some(s) = sleep_score {
+                updated.sleep_score = Some(s);
+            }
+            if let Some(e) = energy {
+                updated.energy = Some(e);
+            }
+            if let Some(m) = mood {
+                updated.mood = Some(m);
+            }
+            self.store.update_daily_log(&updated)?;
+        }
+
+        // Auto-journal entry
+        let entry = JournalEntry::new(
+            daily_log_id,
+            JournalEntryType::CheckInCreated,
+            format!("{checkin_type} check-in: {text}"),
+        );
+        let _ = self.store.insert_journal_entry(&entry);
+
+        Ok(ci.id.value().to_string())
+    }
+
+    // ── Habits ─────────────────────────────────
+
+    pub fn add_habit(&self, name: &str) -> Result<String, CoreError> {
+        use crate::model::habit::Habit;
+        let habit = Habit::new(name.to_string());
+        self.store.insert_habit(&habit)?;
+        Ok(habit.id.value().to_string())
+    }
+
+    pub fn list_habits(&self) -> Result<Vec<(String, String, bool)>, CoreError> {
+        let habits = self.store.list_habits()?;
+        Ok(habits
+            .iter()
+            .map(|h| (h.id.value().to_string(), h.name.clone(), h.is_active))
+            .collect())
+    }
+
+    pub fn mark_habit_done(
+        &self,
+        habit_id: &str,
+        level: Option<&str>,
+    ) -> Result<String, CoreError> {
+        use crate::model::habit_event::{HabitEvent, HabitEventLevel, HabitEventStatus};
+        let id = parse_id::<Habit>(habit_id)?;
+        self.store
+            .get_habit(id)?
+            .ok_or_else(|| CoreError::NotFound(habit_id.to_string()))?;
+        let event_level = level
+            .and_then(|l| match l {
+                "min" => Some(HabitEventLevel::Min),
+                "light" => Some(HabitEventLevel::Light),
+                "base" => Some(HabitEventLevel::Base),
+                "full" => Some(HabitEventLevel::Full),
+                _ => None,
+            })
+            .unwrap_or(HabitEventLevel::Base);
+        let event = HabitEvent::new(id, HabitEventStatus::Done, event_level);
+        self.store.insert_habit_event(&event)?;
+        Ok(event.id.value().to_string())
+    }
+
+    pub fn skip_habit(&self, habit_id: &str) -> Result<String, CoreError> {
+        use crate::model::habit_event::{HabitEvent, HabitEventLevel, HabitEventStatus};
+        let id = parse_id::<Habit>(habit_id)?;
+        self.store
+            .get_habit(id)?
+            .ok_or_else(|| CoreError::NotFound(habit_id.to_string()))?;
+        let event = HabitEvent::new(id, HabitEventStatus::Skipped, HabitEventLevel::Min);
+        self.store.insert_habit_event(&event)?;
+        Ok(event.id.value().to_string())
+    }
+
+    // ── Timers ─────────────────────────────────
+
+    pub fn add_timer(&self, title: &str, duration_seconds: u64) -> Result<String, CoreError> {
+        use crate::model::timer::{TimerDefinition, TimerMode};
+        let timer = TimerDefinition::new(title.to_string(), duration_seconds, TimerMode::Focus);
+        self.store.insert_timer(&timer)?;
+        Ok(timer.id.value().to_string())
+    }
+
+    pub fn list_timers(&self) -> Result<Vec<(String, String, u64)>, CoreError> {
+        let timers = self.store.list_timers()?;
+        Ok(timers
+            .iter()
+            .map(|t| {
+                (
+                    t.id.value().to_string(),
+                    t.title.clone(),
+                    t.duration_seconds,
+                )
+            })
+            .collect())
+    }
+
+    // ── Reminders ──────────────────────────────
+
+    pub fn add_reminder(&self, title: &str, schedule_rule: &str) -> Result<String, CoreError> {
+        use crate::model::reminder::ReminderDefinition;
+        let reminder = ReminderDefinition::new(title.to_string(), schedule_rule.to_string());
+        self.store.insert_reminder(&reminder)?;
+        Ok(reminder.id.value().to_string())
+    }
+
+    pub fn list_reminders(&self) -> Result<Vec<(String, String, String)>, CoreError> {
+        let reminders = self.store.list_reminders()?;
+        Ok(reminders
+            .iter()
+            .map(|r| {
+                (
+                    r.id.value().to_string(),
+                    r.title.clone(),
+                    r.schedule_rule.clone(),
+                )
+            })
+            .collect())
+    }
+
+    // ── Alarms ─────────────────────────────────
+
+    pub fn add_alarm(&self, title: &str, time: &str) -> Result<String, CoreError> {
+        use crate::model::alarm::AlarmDefinition;
+        let parsed_time = chrono::NaiveTime::parse_from_str(time, "%H:%M")
+            .map_err(|e| CoreError::InvalidInput(format!("invalid time: {e}")))?;
+        let alarm = AlarmDefinition::new(title.to_string(), parsed_time);
+        self.store.insert_alarm(&alarm)?;
+        Ok(alarm.id.value().to_string())
+    }
+
+    pub fn list_alarms(&self) -> Result<Vec<(String, String, String)>, CoreError> {
+        let alarms = self.store.list_alarms()?;
+        Ok(alarms
+            .iter()
+            .map(|a| {
+                (
+                    a.id.value().to_string(),
+                    a.title.clone(),
+                    a.time.format("%H:%M").to_string(),
+                )
+            })
+            .collect())
+    }
+
+    // ── Context Documents ──────────────────────
+
+    pub fn add_context_document(
+        &self,
+        doc_type: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<String, CoreError> {
+        use crate::model::context_document::{ContextDocument, ContextDocumentType};
+        let dt: ContextDocumentType = serde_json::from_value(serde_json::json!(doc_type))
+            .map_err(|_| CoreError::InvalidInput(format!("unknown doc_type: {doc_type}")))?;
+        let doc = ContextDocument::new(dt, title.to_string(), content.to_string());
+        self.store.insert_context_document(&doc)?;
+        Ok(doc.id.value().to_string())
+    }
+
+    pub fn list_context_documents(&self) -> Result<Vec<(String, String, String)>, CoreError> {
+        let docs = self.store.list_context_documents()?;
+        Ok(docs
+            .iter()
+            .map(|d| {
+                (
+                    d.id.value().to_string(),
+                    format!("{:?}", d.doc_type),
+                    d.title.clone(),
+                )
+            })
+            .collect())
+    }
+
+    // ── Suggestions ────────────────────────────
+
+    pub fn get_suggestions(&self) -> Result<Vec<String>, CoreError> {
+        let state = self.build_today_state()?;
+        let result = LocalRuleAgentGateway::evaluate(&state);
+        Ok(result
+            .proposals
+            .iter()
+            .map(|p| {
+                let reason = p
+                    .payload_json
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let suggestion = p
+                    .payload_json
+                    .get("suggestion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                format!("{}: {} → {}", p.proposal_type, reason, suggestion)
+            })
+            .collect())
+    }
 }
 
 // ── helpers ────────────────────────────────────
@@ -460,5 +770,11 @@ fn plan_item_to_dto(item: &PlanItem) -> PlanItemDto {
 fn parse_item_id(s: &str) -> Result<Id<PlanItem>, CoreError> {
     let uuid = uuid::Uuid::parse_str(s)
         .map_err(|e| CoreError::InvalidInput(format!("invalid item id: {e}")))?;
+    Ok(Id::from_uuid(uuid))
+}
+
+fn parse_id<T>(s: &str) -> Result<Id<T>, CoreError> {
+    let uuid = uuid::Uuid::parse_str(s)
+        .map_err(|e| CoreError::InvalidInput(format!("invalid id: {e}")))?;
     Ok(Id::from_uuid(uuid))
 }

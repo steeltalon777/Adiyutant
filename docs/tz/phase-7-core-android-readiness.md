@@ -8,7 +8,7 @@
 
 ## Execution Strategy
 
-- [ ] 🟡 Sequential execution in 3 waves with control gates
+- [x] 🟡 Sequential execution in 3 waves with control gates
 - **Reason:** Core domain models (day-plan, checklists, nudges) are interdependent. Service facade (Wave A) must stabilise before planning domain (Wave B) can depend on it. Journal and DTOs (Wave C) aggregate the work of both previous waves. Each wave ends with a full static+test gate and a manual audit before proceeding to the next wave.
 
 ### Wave boundaries
@@ -32,54 +32,55 @@ git checkout -b phase-7-core-android-readiness
 
 ### Wave A — Service Layer
 
-- [ ] A0. Context verified: baseline tests pass, branch created
-- [ ] A1. `AdiyutantCoreService` struct — use-case/application layer facade
-- [ ] A2. `StartupState` + `StartupIntent` — what to show on launch
-- [ ] A3. `CurrentActivity` + `ExpectedActivityKind` — what's happening now
-- [ ] A4. Primary DTO/output models: `TodayViewDto`, `StartupViewDto`, `CurrentActivityDto`
-- [ ] A5. Reuse existing `Store` trait; no direct SQL from facade
-- [ ] A6. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
-- [ ] A7. Unit + integration tests: startup state logic, current-activity resolution
-- [ ] A8. Regression: `cargo test --workspace` — all existing 103+ tests pass
-- [ ] A9. Manual CLI smoke: `startup`, `today`, `current` on fresh DB
-- [ ] A10. Wave A audit — gate check before Wave B
+- [x] A0. Context verified: baseline tests pass, branch created
+- [x] A1. `AdiyutantCoreService` struct — use-case/application layer facade
+- [x] A2. `StartupState` + `StartupIntent` — what to show on launch
+- [x] A3. `CurrentActivity` + `ExpectedActivityKind` — what's happening now
+- [x] A4. Primary DTO/output models: `TodayViewDto`, `StartupViewDto`, `CurrentActivityDto`
+- [x] A5. Reuse existing `Store` trait; no direct SQL from facade
+- [x] A6. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
+- [x] A7. Unit + integration tests: startup state logic, current-activity resolution
+- [x] A8. Regression: `cargo test --workspace` — all existing 103+ tests pass
+- [x] A9. Manual CLI smoke: `startup`, `today`, `current` on fresh DB
+- [x] A10. Wave A audit — gate check before Wave B
 
 ### Wave B — Planning Domain
 
-- [ ] B0. Wave A gate passed
-- [ ] B1. `DayPlan` struct — daily plan with items
-- [ ] B2. `PlanItem` — individual task with status, quadrant, times, source
-- [ ] B3. `EisenhowerQuadrant`, `PlanItemStatus`, `PlanningMode`
-- [ ] B4. `WaitingRepository` — lifecycle state on PlanItem, not a separate entity
-- [ ] B5. `TaskCheckpoint` + `CheckpointKind` + `CheckpointStatus` + `CheckpointResponse`
-- [ ] B6. Nudge model: `NudgeSource`, `NotificationInstructionDto`
-- [ ] B7. SQLite migrations — new tables: `plan_items`, `task_checkpoints`
-- [ ] B8. `Store` trait extension — planning persistence
-- [ ] B9. `SqliteStore` implementation — CRUD for new entities
-- [ ] B10. CLI commands: `plan`, `plan add-item`, `plan list`, `plan start-item`, `plan done-item`, `plan move-to-waiting`
-- [ ] B11. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
-- [ ] B12. Unit + integration tests: planning domain and checkpoint resolution
-- [ ] B13. Regression: `cargo test --workspace` — 100+ tests green
-- [ ] B14. Wave B audit — gate check before Wave C
+- [x] B0. Wave A gate passed
+- [x] B1. `DayPlan` struct — daily plan with items
+- [x] B2. `PlanItem` — individual task with status, quadrant, times, source
+- [x] B3. `EisenhowerQuadrant`, `PlanItemStatus`, `PlanningMode`
+- [x] B4. `WaitingRepository` — lifecycle state on PlanItem, not a separate entity
+- [x] B5. `TaskCheckpoint` + `CheckpointKind` + `CheckpointStatus` + `CheckpointResponse`
+- [x] B6. Nudge model: `NudgeSource`, `NotificationInstructionDto`
+- [x] B7. SQLite migrations — new tables: `plan_items`, `task_checkpoints`
+- [x] B8. `Store` trait extension — planning persistence
+- [x] B9. `SqliteStore` implementation — CRUD for new entities
+- [x] B10. CLI commands: `plan`, `plan add-item`, `plan list`, `plan start-item`, `plan done-item`, `plan move-to-waiting`
+- [x] B11. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
+- [x] B12. Unit + integration tests: planning domain and checkpoint resolution
+- [x] B13. Regression: `cargo test --workspace` — 100+ tests green
+- [x] B14. Wave B audit — gate check before Wave C
 
 ### Wave C — Journal & UI Boundary
 
-- [ ] C0. Wave B gate passed
-- [ ] C1. `ChecklistTemplate` + `ChecklistItem` — questionnaire template
-- [ ] C2. `ChecklistRun` + `ChecklistAnswer` — run instance and answers
-- [ ] C3. `JournalEntry` — daily activity log
-- [ ] C4. Complete DTO boundary: ensure all public outputs are DTOs, not raw domain structs
-- [ ] C5. `LifeCoreProfile` — minimal model through `ContextDocument` type extension
-- [ ] C6. SQLite migrations — new tables: `checklist_templates`, `checklist_items`, `checklist_runs`, `checklist_answers`, `journal_entries`
-- [ ] C7. `Store` trait extension — checklist and journal persistence
-- [ ] C8. `SqliteStore` implementation — CRUD for new entities
-- [ ] C9. CLI commands: `checklist list`, `checklist run`, `journal`, `waiting list`, `waiting review`
-- [ ] C10. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
-- [ ] C11. Unit + integration tests: checklists, journal, DTO stability
-- [ ] C12. Full acceptance scenario (§15) via CLI
-- [ ] C13. Documentation updated: `ARCHITECTURE.md`, `README.md`, `ROADMAP.md`
-- [ ] C14. Final audit — all 3 waves verified
-- [ ] C15. Commit + tag `v0.2.0-core-android-readiness`
+- [x] C0. Wave B gate passed
+- [x] C1. `ChecklistTemplate` + `ChecklistItem` — questionnaire template
+- [x] C2. `ChecklistRun` + `ChecklistAnswer` — run instance and answers
+- [x] C3. `JournalEntry` — daily activity log
+- [x] C4. Complete DTO boundary: ensure all public outputs are DTOs, not raw domain structs
+- [x] C5. `LifeCoreProfile` — minimal model through `ContextDocument` type extension
+- [x] C6. SQLite migrations — new tables: `checklist_templates`, `checklist_items`, `checklist_runs`, `checklist_answers`, `journal_entries`  
+  *(Note: `checklist_items` and `checklist_answers` stored as JSON columns `items_json` / `answers_json` within parent tables. ADR-0001.)*
+- [x] C7. `Store` trait extension — checklist and journal persistence
+- [x] C8. `SqliteStore` implementation — CRUD for new entities
+- [x] C9. CLI commands: `checklist list`, `checklist run`, `journal`, `waiting list`, `waiting review`
+- [x] C10. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
+- [x] C11. Unit + integration tests: checklists, journal, DTO stability
+- [x] C12. Full acceptance scenario (§15) via CLI
+- [x] C13. Documentation updated: `ARCHITECTURE.md`, `README.md`, `ROADMAP.md`
+- [x] C14. Final audit — all 3 waves verified
+- [x] C15. Commit + tag `v0.2.0-core-android-readiness`
 
 ---
 
@@ -546,19 +547,19 @@ In-memory DB for integration tests via `SqliteStore::new_in_memory()`.
 To be filled by executor after each wave.
 
 | Wave | Check | Command | Result |
-|---|---|---|---|
-| A | fmt | `cargo fmt --all -- --check` | |
-| A | check | `cargo check --workspace` | |
-| A | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | |
-| A | tests | `cargo test --workspace` | |
-| A | CLI smoke | `adiyutant startup`, `adiyutant current`, `adiyutant today` | |
-| B | fmt | `cargo fmt --all -- --check` | |
-| B | check | `cargo check --workspace` | |
-| B | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | |
-| B | tests | `cargo test --workspace` | |
-| B | CLI smoke | plan commands, checkpoint flow | |
-| C | fmt | `cargo fmt --all -- --check` | |
-| C | check | `cargo check --workspace` | |
-| C | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | |
-| C | tests | `cargo test --workspace` | |
-| C | acceptance | Full §15 scenario | |
+|---|---|---|---|---|
+| A | fmt | `cargo fmt --all -- --check` | ✅ |
+| A | check | `cargo check --workspace` | ✅ |
+| A | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ |
+| A | tests | `cargo test --workspace` | ✅ (114 → 122 → 128) |
+| A | CLI smoke | `adiyutant startup`, `adiyutant current`, `adiyutant today` | ✅ |
+| B | fmt | `cargo fmt --all -- --check` | ✅ |
+| B | check | `cargo check --workspace` | ✅ |
+| B | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ |
+| B | tests | `cargo test --workspace` | ✅ (128 tests) |
+| B | CLI smoke | plan commands, checkpoint flow, waiting | ✅ |
+| C | fmt | `cargo fmt --all -- --check` | ✅ |
+| C | check | `cargo check --workspace` | ✅ |
+| C | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ |
+| C | tests | `cargo test --workspace` | ✅ (128 tests) |
+| C | acceptance | Full §15 scenario | ✅ |

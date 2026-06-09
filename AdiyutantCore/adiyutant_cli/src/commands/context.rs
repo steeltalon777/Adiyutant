@@ -1,5 +1,4 @@
-use adiyutant_core::model::context_document::{ContextDocument, ContextDocumentType};
-use adiyutant_core::store::Store;
+use adiyutant_core::service::AdiyutantCoreService;
 
 #[derive(clap::ValueEnum, Debug, Clone, PartialEq)]
 pub enum ContextTypeArg {
@@ -10,35 +9,27 @@ pub enum ContextTypeArg {
     Health,
     Work,
     Custom,
+    LifeCore,
+    RecoveryProtocol,
+    Tone,
+    PlanningPreferences,
 }
 
 impl ContextTypeArg {
-    fn to_domain(&self) -> ContextDocumentType {
+    fn as_json_str(&self) -> &'static str {
         match self {
-            ContextTypeArg::Core => ContextDocumentType::Core,
-            ContextTypeArg::Goals => ContextDocumentType::Goals,
-            ContextTypeArg::Rules => ContextDocumentType::Rules,
-            ContextTypeArg::Routine => ContextDocumentType::Routine,
-            ContextTypeArg::Health => ContextDocumentType::Health,
-            ContextTypeArg::Work => ContextDocumentType::Work,
-            ContextTypeArg::Custom => ContextDocumentType::Custom,
+            ContextTypeArg::Core => "core",
+            ContextTypeArg::Goals => "goals",
+            ContextTypeArg::Rules => "rules",
+            ContextTypeArg::Routine => "routine",
+            ContextTypeArg::Health => "health",
+            ContextTypeArg::Work => "work",
+            ContextTypeArg::Custom => "custom",
+            ContextTypeArg::LifeCore => "life_core",
+            ContextTypeArg::RecoveryProtocol => "recovery_protocol",
+            ContextTypeArg::Tone => "tone",
+            ContextTypeArg::PlanningPreferences => "planning_preferences",
         }
-    }
-}
-
-fn doc_type_display(dt: &ContextDocumentType) -> &'static str {
-    match dt {
-        ContextDocumentType::Core => "core",
-        ContextDocumentType::Goals => "goals",
-        ContextDocumentType::Rules => "rules",
-        ContextDocumentType::Routine => "routine",
-        ContextDocumentType::Health => "health",
-        ContextDocumentType::Work => "work",
-        ContextDocumentType::Custom => "custom",
-        ContextDocumentType::LifeCore => "life_core",
-        ContextDocumentType::RecoveryProtocol => "recovery_protocol",
-        ContextDocumentType::Tone => "tone",
-        ContextDocumentType::PlanningPreferences => "planning_preferences",
     }
 }
 
@@ -46,94 +37,79 @@ fn doc_type_display(dt: &ContextDocumentType) -> &'static str {
 pub enum ContextCmd {
     /// Add a context document
     Add {
-        /// Document type: core, goals, rules, routine, health, work, custom
+        /// Document type
         #[arg(value_enum)]
         doc_type: ContextTypeArg,
-        /// Document title
+        /// Title
         title: String,
-        /// Document content (markdown)
+        /// Content (markdown)
         content: String,
     },
     /// List context documents
     List,
-    /// Show a context document by title (first match)
+    /// Show a context document by title
     Show {
-        /// Document title to show
+        /// Title to search for
         title: String,
     },
 }
 
-pub fn handle(store: &adiyutant_store::SqliteStore, cmd: &ContextCmd) {
+pub fn handle(facade: &AdiyutantCoreService, cmd: &ContextCmd) {
     match cmd {
         ContextCmd::Add {
             doc_type,
             title,
             content,
-        } => cmd_add(store, doc_type, title, content),
-        ContextCmd::List => cmd_list(store),
-        ContextCmd::Show { title } => cmd_show(store, title),
-    }
-}
-
-fn cmd_add(
-    store: &adiyutant_store::SqliteStore,
-    doc_type: &ContextTypeArg,
-    title: &str,
-    content: &str,
-) {
-    let doc = ContextDocument::new(doc_type.to_domain(), title.to_string(), content.to_string());
-
-    match store.insert_context_document(&doc) {
-        Ok(()) => {
-            let type_name = format!("{:?}", doc_type).to_lowercase();
-            println!("📄 Context document \"{title}\" added (type: {type_name}, v1)");
-        }
-        Err(e) => {
-            eprintln!("Error saving context document: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_list(store: &adiyutant_store::SqliteStore) {
-    match store.list_context_documents() {
-        Ok(docs) => {
-            if docs.is_empty() {
-                println!("No context documents. Use `adiyutant context add ...` to create one.");
-                return;
+        } => match facade.add_context_document(doc_type.as_json_str(), title, content) {
+            Ok(id) => println!("✅ Context document added (ID: {id})"),
+            Err(e) => {
+                eprintln!("Error adding context document: {e}");
+                std::process::exit(1);
             }
-            println!("📚 Context documents ({}):", docs.len());
-            for d in &docs {
-                let type_name = doc_type_display(&d.doc_type);
-                println!("  • [{type_name}] {} (v{})", d.title, d.version);
-            }
-        }
-        Err(e) => {
-            eprintln!("Error listing context documents: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_show(store: &adiyutant_store::SqliteStore, title: &str) {
-    match store.list_context_documents() {
-        Ok(docs) => {
-            let doc = docs.into_iter().find(|d| d.title == title);
-            match doc {
-                Some(d) => {
-                    let type_name = doc_type_display(&d.doc_type);
-                    println!("── {title} ({type_name}, v{}) ──", d.version);
-                    println!("{}", d.content_markdown);
+        },
+        ContextCmd::List => match facade.list_context_documents() {
+            Ok(docs) => {
+                if docs.is_empty() {
+                    println!("No context documents.");
+                    return;
                 }
-                None => {
-                    eprintln!("Context document \"{title}\" not found.");
+                println!("📄 Context documents:");
+                for (_id, doc_type, title) in &docs {
+                    println!("  • [{doc_type}] {title}");
+                }
+            }
+            Err(e) => {
+                eprintln!("Error listing context documents: {e}");
+                std::process::exit(1);
+            }
+        },
+        ContextCmd::Show { title } => {
+            // Use raw store for detailed view (still acceptable for debug-ish command)
+            let store = crate::common::init_store().unwrap_or_else(|e| {
+                eprintln!("Error initializing store: {e}");
+                std::process::exit(1);
+            });
+            use adiyutant_core::store::Store;
+            match store.list_context_documents() {
+                Ok(docs) => {
+                    let found: Vec<_> = docs
+                        .iter()
+                        .filter(|d| d.title.to_lowercase().contains(&title.to_lowercase()))
+                        .collect();
+                    if found.is_empty() {
+                        println!("No context document matching \"{title}\".");
+                    } else {
+                        for doc in found {
+                            println!("── {:?}: {} (v{}) ──", doc.doc_type, doc.title, doc.version);
+                            println!("{}", doc.content_markdown);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error reading context: {e}");
                     std::process::exit(1);
                 }
             }
-        }
-        Err(e) => {
-            eprintln!("Error reading context documents: {e}");
-            std::process::exit(1);
         }
     }
 }
@@ -141,16 +117,14 @@ fn cmd_show(store: &adiyutant_store::SqliteStore, title: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adiyutant_core::model::context_document::ContextDocumentType as DomainType;
 
     #[test]
-    fn context_type_arg_to_domain() {
-        assert_eq!(ContextTypeArg::Core.to_domain(), DomainType::Core);
-        assert_eq!(ContextTypeArg::Goals.to_domain(), DomainType::Goals);
-        assert_eq!(ContextTypeArg::Rules.to_domain(), DomainType::Rules);
-        assert_eq!(ContextTypeArg::Routine.to_domain(), DomainType::Routine);
-        assert_eq!(ContextTypeArg::Health.to_domain(), DomainType::Health);
-        assert_eq!(ContextTypeArg::Work.to_domain(), DomainType::Work);
-        assert_eq!(ContextTypeArg::Custom.to_domain(), DomainType::Custom);
+    fn context_type_arg_as_json_str() {
+        assert_eq!(ContextTypeArg::Core.as_json_str(), "core");
+        assert_eq!(ContextTypeArg::LifeCore.as_json_str(), "life_core");
+        assert_eq!(
+            ContextTypeArg::RecoveryProtocol.as_json_str(),
+            "recovery_protocol"
+        );
     }
 }

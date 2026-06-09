@@ -1,8 +1,5 @@
 use adiyutant_core::dto::TodayViewDto;
-use adiyutant_core::model::check_in::{CheckIn, CheckInType};
-use adiyutant_core::model::daily_log::DailyLog;
 use adiyutant_core::service::AdiyutantCoreService;
-use adiyutant_core::store::Store;
 
 /// Arguments for the `checkin` subcommand.
 #[derive(clap::Args, Debug, Clone)]
@@ -24,12 +21,12 @@ pub enum CheckinTypeArg {
 }
 
 impl CheckinTypeArg {
-    fn to_domain(&self) -> CheckInType {
+    pub fn as_str(&self) -> &'static str {
         match self {
-            CheckinTypeArg::Morning => CheckInType::Morning,
-            CheckinTypeArg::Day => CheckInType::Day,
-            CheckinTypeArg::Evening => CheckInType::Evening,
-            CheckinTypeArg::Shutdown => CheckInType::Shutdown,
+            CheckinTypeArg::Morning => "morning",
+            CheckinTypeArg::Day => "day",
+            CheckinTypeArg::Evening => "evening",
+            CheckinTypeArg::Shutdown => "shutdown",
         }
     }
 }
@@ -85,10 +82,10 @@ pub fn cmd_today(facade: &AdiyutantCoreService) {
     }
 }
 
-/// `adiyutant log` — show raw daily log.
+/// `adiyutant log` — show raw daily log (direct store access acceptable for debug).
 pub fn cmd_log(store: &adiyutant_store::SqliteStore) {
     let today = chrono::Utc::now().date_naive();
-
+    use adiyutant_core::store::Store;
     match store.get_daily_log_by_date(today) {
         Ok(Some(log)) => {
             println!("Date: {}", log.date);
@@ -114,93 +111,76 @@ pub fn cmd_log(store: &adiyutant_store::SqliteStore) {
     }
 }
 
-/// `adiyutant checkin <type> <text>` — create a check-in.
-pub fn cmd_checkin(store: &adiyutant_store::SqliteStore, args: &CheckinArgs) {
-    let today = chrono::Utc::now().date_naive();
+/// `adiyutant checkin <type> <text>` — create a check-in via facade.
+pub fn cmd_checkin(facade: &AdiyutantCoreService, args: &CheckinArgs) {
+    // Parse structured data from text: sleep=N, energy=N, mood=N
+    let (text, sleep_score, energy, mood) = parse_metrics(&args.text);
 
-    // Get or create DailyLog for today
-    let daily_log = match store.get_daily_log_by_date(today) {
-        Ok(Some(log)) => log,
-        Ok(None) => {
-            let new_log = DailyLog::new(today);
-            if let Err(e) = store.insert_daily_log(&new_log) {
-                eprintln!("Error creating daily log: {e}");
-                std::process::exit(1);
+    match facade.create_checkin(args.checkin_type.as_str(), &text, sleep_score, energy, mood) {
+        Ok(_id) => {
+            let type_name = args.checkin_type.as_str();
+            println!("✅ {type_name} check-in recorded.");
+            if sleep_score.is_some() || energy.is_some() || mood.is_some() {
+                println!("   Numeric values extracted and saved.");
             }
-            new_log
         }
         Err(e) => {
-            eprintln!("Error reading daily log: {e}");
+            eprintln!("Error recording check-in: {e}");
             std::process::exit(1);
         }
-    };
+    }
+}
 
-    // Parse text for structured data hints
+/// Extract sleep=, energy=, mood= from the check-in text.
+fn parse_metrics(text: &str) -> (String, Option<u8>, Option<u8>, Option<u8>) {
+    let mut clean = text.to_string();
+    let mut sleep_score: Option<u8> = None;
     let mut energy: Option<u8> = None;
     let mut mood: Option<u8> = None;
-    let mut sleep_score: Option<u8> = None;
 
-    for word in args.text.split_whitespace() {
+    for word in text.split_whitespace() {
         if let Some(rest) = word.strip_prefix("sleep=") {
             sleep_score = rest.parse::<u8>().ok();
+            clean = clean.replace(word, "").trim().to_string();
         } else if let Some(rest) = word.strip_prefix("energy=") {
             energy = rest.parse::<u8>().ok();
+            clean = clean.replace(word, "").trim().to_string();
         } else if let Some(rest) = word.strip_prefix("mood=") {
             mood = rest.parse::<u8>().ok();
+            clean = clean.replace(word, "").trim().to_string();
         }
     }
 
-    let ci = CheckIn::new(
-        daily_log.id,
-        args.checkin_type.to_domain(),
-        args.text.clone(),
-    );
-    if let Err(e) = store.insert_check_in(&ci) {
-        eprintln!("Error recording check-in: {e}");
-        std::process::exit(1);
-    }
-
-    // Update daily log with any parsed values
-    let mut needs_update = false;
-    if (energy.is_some() || mood.is_some() || sleep_score.is_some())
-        && let Some(log) = store.get_daily_log_by_date(today).ok().flatten()
-    {
-        let mut updated = log.clone();
-        if let Some(e) = energy {
-            updated.energy = Some(e);
-        }
-        if let Some(m) = mood {
-            updated.mood = Some(m);
-        }
-        if let Some(s) = sleep_score {
-            updated.sleep_score = Some(s);
-        }
-        if updated.energy != log.energy
-            || updated.mood != log.mood
-            || updated.sleep_score != log.sleep_score
-        {
-            let _ = store.update_daily_log(&updated);
-            needs_update = true;
-        }
-    }
-
-    let type_name = format!("{:?}", args.checkin_type).to_lowercase();
-    println!("✅ {type_name} check-in recorded.");
-    if needs_update {
-        println!("   Numeric values extracted and saved.");
-    }
+    (clean, sleep_score, energy, mood)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adiyutant_core::model::check_in::CheckInType;
 
     #[test]
-    fn checkin_type_arg_to_domain() {
-        assert_eq!(CheckinTypeArg::Morning.to_domain(), CheckInType::Morning);
-        assert_eq!(CheckinTypeArg::Day.to_domain(), CheckInType::Day);
-        assert_eq!(CheckinTypeArg::Evening.to_domain(), CheckInType::Evening);
-        assert_eq!(CheckinTypeArg::Shutdown.to_domain(), CheckInType::Shutdown);
+    fn checkin_type_arg_as_str() {
+        assert_eq!(CheckinTypeArg::Morning.as_str(), "morning");
+        assert_eq!(CheckinTypeArg::Day.as_str(), "day");
+        assert_eq!(CheckinTypeArg::Evening.as_str(), "evening");
+        assert_eq!(CheckinTypeArg::Shutdown.as_str(), "shutdown");
+    }
+
+    #[test]
+    fn parse_metrics_extracts_values() {
+        let (text, sleep, energy, mood) = parse_metrics("gm sleep=7 energy=6 mood=8");
+        assert_eq!(text, "gm");
+        assert_eq!(sleep, Some(7));
+        assert_eq!(energy, Some(6));
+        assert_eq!(mood, Some(8));
+    }
+
+    #[test]
+    fn parse_metrics_no_metrics() {
+        let (text, sleep, energy, mood) = parse_metrics("hello world");
+        assert_eq!(text, "hello world");
+        assert!(sleep.is_none());
+        assert!(energy.is_none());
+        assert!(mood.is_none());
     }
 }

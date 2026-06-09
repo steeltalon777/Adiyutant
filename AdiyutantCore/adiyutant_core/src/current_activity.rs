@@ -1,5 +1,6 @@
 use chrono::Timelike;
 
+use crate::model::day_plan::PlanItemStatus;
 use crate::today_state::TodayState;
 
 /// What kind of activity is expected right now.
@@ -100,13 +101,29 @@ impl CurrentActivity {
             };
         }
 
-        // 4. Check for in-progress task
+        // 4. Check for in-progress task (legacy Plan + new PlanItem)
+        // Check new plan_items first, then fall back to legacy plan
+        let started_new = today_state
+            .plan_items
+            .iter()
+            .find(|i| matches!(i.status, PlanItemStatus::Started));
+        if let Some(item) = started_new {
+            return CurrentActivity {
+                kind: ExpectedActivityKind::ScheduledTask,
+                active_task: Some(item.title.clone()),
+                active_block: None,
+                next_checkpoint: None,
+                recommended_prompt: format!("Working on: {}", item.title),
+            };
+        }
+
+        // Check legacy plan's in-progress items
         if let Some(plan) = &today_state.plan {
-            let started_item = plan
+            let started_legacy = plan
                 .items
                 .iter()
                 .find(|i| matches!(i.status, crate::model::plan::PlanItemStatus::InProgress));
-            if let Some(item) = started_item {
+            if let Some(item) = started_legacy {
                 return CurrentActivity {
                     kind: ExpectedActivityKind::ScheduledTask,
                     active_task: Some(item.description.clone()),
@@ -116,7 +133,7 @@ impl CurrentActivity {
                 };
             }
 
-            // No started items — suggest first pending
+            // No started items — suggest first pending legacy item
             let first_pending = plan
                 .items
                 .iter()
@@ -130,6 +147,21 @@ impl CurrentActivity {
                     recommended_prompt: format!("Ready to start: {}", item.description),
                 };
             }
+        }
+
+        // Check for pending new plan items
+        let first_pending_new = today_state
+            .plan_items
+            .iter()
+            .find(|i| matches!(i.status, PlanItemStatus::Planned));
+        if let Some(item) = first_pending_new {
+            return CurrentActivity {
+                kind: ExpectedActivityKind::ScheduledTask,
+                active_task: Some(item.title.clone()),
+                active_block: None,
+                next_checkpoint: None,
+                recommended_prompt: format!("Ready to start: {}", item.title),
+            };
         }
 
         // 5. Evening without shutdown
