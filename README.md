@@ -12,7 +12,7 @@ Planned features: alarm, timer, daily journal, calendar, habits, reminders, pers
 
 - **3 crates**: `adiyutant_core` (domain + service facade + DTOs), `adiyutant_store` (SQLite), `adiyutant_cli` (CLI)
 - **15 CLI commands**: today, log, checkin, startup, current, checklist, plan, habit, timer, reminder, alarm, context, suggest, journal, waiting
-- **13 SQLite tables**: DailyLog, CheckIn, Habit, HabitEvent, ReminderDefinition, AlarmDefinition, TimerDefinition, ContextDocument, Plan, ActionProposal, PlanItem, TaskCheckpoint, ChecklistTemplate, ChecklistRun, JournalEntry
+- **15 SQLite tables**: daily_logs, check_ins, habits, habit_events, reminders, alarms, timers, context_documents, plans, action_proposals, plan_items, task_checkpoints, checklist_templates, checklist_runs, journal_entries
 - **148 tests**: 92 core + 46 store + 7 CLI unit + 3 CLI integration
 - **6 local rules** in `LocalRuleAgentGateway` — no LLM required
 - **0 external dependencies**: no server, no sync, no AI keys needed

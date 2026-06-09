@@ -35,7 +35,7 @@ AdiyutantCore/                   ← Cargo workspace
 │   ├── today_state.rs            ← Day state aggregator + plan_items
 │   └── local_rule_gateway.rs     ← 6 local rules (no LLM)
 ├── adiyutant_store/              ← 46 tests
-│   └── Store impl + SqliteStore  ← 13 tables (legacy + plan_items + task_checkpoints
+│       └── Store impl + SqliteStore  ← 15 tables (legacy + plan_items + task_checkpoints
 │                                    + checklist_templates + checklist_runs + journal_entries)
 └── adiyutant_cli/                ← 10 tests (7 unit + 3 integration)
     └── 15 commands via clap       ← today, log, checkin, startup, current,

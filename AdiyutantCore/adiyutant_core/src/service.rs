@@ -86,6 +86,9 @@ impl AdiyutantCoreService {
     /// Full today's dashboard view.
     pub fn get_today(&self) -> Result<TodayViewDto, CoreError> {
         let state = self.build_today_state()?;
+        let legacy_item_count = state.plan.as_ref().map_or(0, |p| p.items.len());
+        let new_item_count = state.plan_items.len();
+
         Ok(TodayViewDto {
             date: dto::naive_date_to_string(state.date),
             has_daily_log: state.daily_log.is_some(),
@@ -110,15 +113,30 @@ impl AdiyutantCoreService {
                 .plan
                 .as_ref()
                 .map(|p| p.title.clone())
+                .or_else(|| {
+                    if !state.plan_items.is_empty() {
+                        Some(format!("Plan for {}", state.date.format("%Y-%m-%d")))
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_default(),
-            plan_item_count: state.plan.as_ref().map_or(0, |p| p.items.len()),
-            plan_items: state
-                .plan
-                .as_ref()
-                .map(|p| {
-                    p.items
-                        .iter()
-                        .map(|item| dto::PlanItemViewDto {
+            plan_item_count: legacy_item_count + new_item_count,
+            plan_items: {
+                let mut items: Vec<dto::PlanItemViewDto> = Vec::new();
+                // New plan_items
+                for pi in &state.plan_items {
+                    items.push(dto::PlanItemViewDto {
+                        description: pi.title.clone(),
+                        status: pi.status.as_str().to_string(),
+                        estimated_minutes: String::new(),
+                        notes: dto::option_string(&pi.description),
+                    });
+                }
+                // Legacy plan items
+                if let Some(plan) = &state.plan {
+                    for item in &plan.items {
+                        items.push(dto::PlanItemViewDto {
                             description: item.description.clone(),
                             status: format!("{:?}", item.status),
                             estimated_minutes: item
@@ -126,10 +144,11 @@ impl AdiyutantCoreService {
                                 .map(|m| m.to_string())
                                 .unwrap_or_default(),
                             notes: dto::option_string(&item.notes),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
+                        });
+                    }
+                }
+                items
+            },
             suggestion_count: {
                 let rule_result = LocalRuleAgentGateway::evaluate(&state);
                 rule_result.proposals.len()
