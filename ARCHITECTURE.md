@@ -17,20 +17,30 @@ AdiyutantCore (Rust, local-first)
 
 ## Current State
 
-**MVP 0.1 in progress.** Core implemented with 3 Rust crates, SQLite persistence, CLI with 9 commands, 103 tests passing.
+**MVP 0.1 completed, v0.2.0 — Core Service Facade & Android Readiness.** 148 tests passing. Core implemented with 3 Rust crates, SQLite persistence, CLI with 15 commands, service facade layer for Android consumption.
 
 ### Implemented
 
 ```
 AdiyutantCore/                   ← Cargo workspace
-├── adiyutant_core/               ← 66 tests
-│   ├── model/                    ← 10 domain entities
-│   ├── today_state.rs            ← Day state aggregator
+├── adiyutant_core/               ← 92 tests
+│   ├── model/                    ← 16 domain entities (10 legacy + DayPlan,
+│   │                               PlanItem, TaskCheckpoint, NudgeSource,
+│   │                               ChecklistTemplate, ChecklistRun, JournalEntry)
+│   ├── store.rs                  ← Store trait (definition moved from store crate)
+│   ├── service.rs                ← AdiyutantCoreService facade (use-case layer)
+│   ├── startup.rs                ← StartupState, StartupIntent
+│   ├── current_activity.rs       ← CurrentActivity, ExpectedActivityKind
+│   ├── dto.rs                    ← Flat DTO layer (no domain types in public API)
+│   ├── today_state.rs            ← Day state aggregator + plan_items
 │   └── local_rule_gateway.rs     ← 6 local rules (no LLM)
-├── adiyutant_store/              ← 23 tests
-│   └── Store trait + SqliteStore ← 10 tables
-└── adiyutant_cli/                ← 14 tests (11 unit + 3 integration)
-    └── 9 commands via clap
+├── adiyutant_store/              ← 46 tests
+│   └── Store impl + SqliteStore  ← 13 tables (legacy + plan_items + task_checkpoints
+│                                    + checklist_templates + checklist_runs + journal_entries)
+└── adiyutant_cli/                ← 10 tests (7 unit + 3 integration)
+    └── 15 commands via clap       ← today, log, checkin, startup, current,
+                                     checklist, plan, habit, timer, reminder,
+                                     alarm, context, suggest, journal, waiting
 ```
 
 ## Planned High-Level Architecture

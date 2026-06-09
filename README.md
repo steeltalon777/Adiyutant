@@ -8,12 +8,12 @@ Planned features: alarm, timer, daily journal, calendar, habits, reminders, pers
 
 ## Current State
 
-**Status: MVP 0.1** — local-first Rust Core implemented.
+**Status: v0.2.0** — Core Service Facade & Android Readiness.
 
-- **3 crates**: `adiyutant_core` (domain), `adiyutant_store` (SQLite), `adiyutant_cli` (CLI)
-- **9 CLI commands**: today, log, checkin, habit, timer, reminder, alarm, context, suggest
-- **10 SQLite tables**: DailyLog, CheckIn, Habit, HabitEvent, ReminderDefinition, AlarmDefinition, TimerDefinition, ContextDocument, Plan, ActionProposal
-- **103 tests**: 66 core + 23 store + 11 CLI unit + 3 CLI integration
+- **3 crates**: `adiyutant_core` (domain + service facade + DTOs), `adiyutant_store` (SQLite), `adiyutant_cli` (CLI)
+- **15 CLI commands**: today, log, checkin, startup, current, checklist, plan, habit, timer, reminder, alarm, context, suggest, journal, waiting
+- **13 SQLite tables**: DailyLog, CheckIn, Habit, HabitEvent, ReminderDefinition, AlarmDefinition, TimerDefinition, ContextDocument, Plan, ActionProposal, PlanItem, TaskCheckpoint, ChecklistTemplate, ChecklistRun, JournalEntry
+- **148 tests**: 92 core + 46 store + 7 CLI unit + 3 CLI integration
 - **6 local rules** in `LocalRuleAgentGateway` — no LLM required
 - **0 external dependencies**: no server, no sync, no AI keys needed
 

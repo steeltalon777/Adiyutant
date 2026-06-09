@@ -80,3 +80,22 @@ Goal: Bring local Core to MVP 0.1 quality.
 - [x] Documentation sync with implemented Core
 - [x] MVP acceptance scenario
 - [x] MVP 0.1 release marker
+
+## Phase 7 — Core Service Facade & Android Readiness [x] Done
+
+**Completed: 2026-06-09**
+
+Goal: Prepare Core for Android consumption — service facade, stable DTOs, planning domain, checklists, journal.
+
+- [x] Store trait moved to `adiyutant_core` (architectural refactor)
+- [x] `AdiyutantCoreService` facade with DTO boundary
+- [x] `StartupState` / `CurrentActivity` with time-aware heuristics
+- [x] Planning domain: DayPlan, PlanItem, EisenhowerQuadrant, TaskCheckpoint
+- [x] Nudge model: NudgeSource, NotificationInstructionDto
+- [x] Waiting task lifecycle (move, review, resume, archive)
+- [x] Checklist domain: templates, runs, auto-seeding
+- [x] Journal entry tracking (auto-journal on checkin)
+- [x] 15 CLI commands (all through facade)
+- [x] 148 tests (92 core + 46 store + 7 CLI unit + 3 CLI smoke)
+- [x] ADR-0001: JSON embedded collections
+- [x] Tag: v0.2.0-core-android-readiness
