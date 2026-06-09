@@ -143,6 +143,34 @@ fn run_migration(conn: &Connection) -> Result<(), CoreError> {
             created_at TEXT NOT NULL,
             answered_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS checklist_templates (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            category TEXT NOT NULL,
+            items_json TEXT NOT NULL DEFAULT '[]',
+            version INTEGER NOT NULL DEFAULT 1,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS checklist_runs (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL REFERENCES checklist_templates(id),
+            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            answers_json TEXT NOT NULL DEFAULT '[]'
+        );
+
+        CREATE TABLE IF NOT EXISTS journal_entries (
+            id TEXT PRIMARY KEY,
+            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+            timestamp TEXT NOT NULL,
+            entry_type TEXT NOT NULL,
+            summary TEXT NOT NULL
+        );
         ",
     )
     .map_err(|e| CoreError::Storage(e.to_string()))
@@ -1449,6 +1477,267 @@ impl Store for SqliteStore {
         }
         Ok(())
     }
+
+    // ── ChecklistTemplate ──
+
+    fn insert_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error> {
+        self.conn.execute(
+            "INSERT INTO checklist_templates (id, title, category, items_json, version, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                uuid_to_string(template.id),
+                template.title,
+                template.category,
+                serde_json::to_string(&template.items).map_err(|e| CoreError::Storage(e.to_string()))?,
+                template.version,
+                template.is_active as i32,
+                datetime_to_string(&template.created_at),
+                datetime_to_string(&template.updated_at),
+            ],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_checklist_template(
+        &self,
+        id: Id<ChecklistTemplate>,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self.conn
+            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at FROM checklist_templates WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_checklist_template(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(t)) => Ok(Some(t?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_checklist_templates(&self) -> Result<Vec<ChecklistTemplate>, Self::Error> {
+        let mut stmt = self.conn
+            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at FROM checklist_templates ORDER BY title")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok(row_to_checklist_template(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut templates = Vec::new();
+        for row in rows {
+            templates.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(templates)
+    }
+
+    fn list_checklist_templates_by_category(
+        &self,
+        category: &str,
+    ) -> Result<Vec<ChecklistTemplate>, Self::Error> {
+        let mut stmt = self.conn
+            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at FROM checklist_templates WHERE category = ?1 ORDER BY title")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![category], |row| Ok(row_to_checklist_template(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut templates = Vec::new();
+        for row in rows {
+            templates.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(templates)
+    }
+
+    fn update_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error> {
+        let affected = self.conn.execute(
+            "UPDATE checklist_templates SET title = ?1, category = ?2, items_json = ?3, version = ?4, is_active = ?5, updated_at = ?6 WHERE id = ?7",
+            params![
+                template.title,
+                template.category,
+                serde_json::to_string(&template.items).map_err(|e| CoreError::Storage(e.to_string()))?,
+                template.version,
+                template.is_active as i32,
+                datetime_to_string(&template.updated_at),
+                uuid_to_string(template.id),
+            ],
+        ).map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("checklist_template".into()));
+        }
+        Ok(())
+    }
+
+    fn delete_checklist_template(&self, id: Id<ChecklistTemplate>) -> Result<(), Self::Error> {
+        let id_str = uuid_to_string(id);
+        let affected = self
+            .conn
+            .execute(
+                "DELETE FROM checklist_templates WHERE id = ?1",
+                params![id_str],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("checklist_template".into()));
+        }
+        Ok(())
+    }
+
+    // ── ChecklistRun ──
+
+    fn insert_checklist_run(&self, run: &ChecklistRun) -> Result<(), Self::Error> {
+        self.conn.execute(
+            "INSERT INTO checklist_runs (id, template_id, daily_log_id, started_at, completed_at, answers_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                uuid_to_string(run.id),
+                uuid_to_string(run.template_id),
+                uuid_to_string(run.daily_log_id),
+                datetime_to_string(&run.started_at),
+                run.completed_at.as_ref().map(datetime_to_string),
+                serde_json::to_string(&run.answers).map_err(|e| CoreError::Storage(e.to_string()))?,
+            ],
+        ).map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_checklist_run(&self, id: Id<ChecklistRun>) -> Result<Option<ChecklistRun>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self.conn
+            .prepare("SELECT id, template_id, daily_log_id, started_at, completed_at, answers_json FROM checklist_runs WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_checklist_run(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(r)) => Ok(Some(r?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_checklist_runs_by_log(
+        &self,
+        daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<ChecklistRun>, Self::Error> {
+        let log_id_str = uuid_to_string(daily_log_id);
+        let mut stmt = self.conn
+            .prepare("SELECT id, template_id, daily_log_id, started_at, completed_at, answers_json FROM checklist_runs WHERE daily_log_id = ?1 ORDER BY started_at DESC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![log_id_str], |row| Ok(row_to_checklist_run(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut runs = Vec::new();
+        for row in rows {
+            runs.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(runs)
+    }
+
+    fn update_checklist_run(&self, run: &ChecklistRun) -> Result<(), Self::Error> {
+        let affected = self.conn.execute(
+            "UPDATE checklist_runs SET template_id = ?1, daily_log_id = ?2, started_at = ?3, completed_at = ?4, answers_json = ?5 WHERE id = ?6",
+            params![
+                uuid_to_string(run.template_id),
+                uuid_to_string(run.daily_log_id),
+                datetime_to_string(&run.started_at),
+                run.completed_at.as_ref().map(datetime_to_string),
+                serde_json::to_string(&run.answers).map_err(|e| CoreError::Storage(e.to_string()))?,
+                uuid_to_string(run.id),
+            ],
+        ).map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("checklist_run".into()));
+        }
+        Ok(())
+    }
+
+    fn delete_checklist_run(&self, id: Id<ChecklistRun>) -> Result<(), Self::Error> {
+        let id_str = uuid_to_string(id);
+        let affected = self
+            .conn
+            .execute("DELETE FROM checklist_runs WHERE id = ?1", params![id_str])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("checklist_run".into()));
+        }
+        Ok(())
+    }
+
+    // ── JournalEntry ──
+
+    fn insert_journal_entry(&self, entry: &JournalEntry) -> Result<(), Self::Error> {
+        self.conn.execute(
+            "INSERT INTO journal_entries (id, daily_log_id, timestamp, entry_type, summary) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                uuid_to_string(entry.id),
+                uuid_to_string(entry.daily_log_id),
+                datetime_to_string(&entry.timestamp),
+                entry.entry_type.as_str(),
+                entry.summary,
+            ],
+        ).map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_journal_entry(&self, id: Id<JournalEntry>) -> Result<Option<JournalEntry>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self.conn
+            .prepare("SELECT id, daily_log_id, timestamp, entry_type, summary FROM journal_entries WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_journal_entry(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(e)) => Ok(Some(e?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_journal_entries_by_log(
+        &self,
+        daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<JournalEntry>, Self::Error> {
+        let log_id_str = uuid_to_string(daily_log_id);
+        let mut stmt = self.conn
+            .prepare("SELECT id, daily_log_id, timestamp, entry_type, summary FROM journal_entries WHERE daily_log_id = ?1 ORDER BY timestamp ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![log_id_str], |row| Ok(row_to_journal_entry(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(entries)
+    }
+
+    fn update_journal_entry(&self, entry: &JournalEntry) -> Result<(), Self::Error> {
+        let affected = self.conn.execute(
+            "UPDATE journal_entries SET daily_log_id = ?1, timestamp = ?2, entry_type = ?3, summary = ?4 WHERE id = ?5",
+            params![
+                uuid_to_string(entry.daily_log_id),
+                datetime_to_string(&entry.timestamp),
+                entry.entry_type.as_str(),
+                entry.summary,
+                uuid_to_string(entry.id),
+            ],
+        ).map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("journal_entry".into()));
+        }
+        Ok(())
+    }
+
+    fn delete_journal_entry(&self, id: Id<JournalEntry>) -> Result<(), Self::Error> {
+        let id_str = uuid_to_string(id);
+        let affected = self
+            .conn
+            .execute("DELETE FROM journal_entries WHERE id = ?1", params![id_str])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("journal_entry".into()));
+        }
+        Ok(())
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -1648,6 +1937,49 @@ fn row_to_task_checkpoint(row: &rusqlite::Row<'_>) -> Result<TaskCheckpoint, Cor
         response: response_str.and_then(|r| CheckpointResponse::from_str(&r)),
         created_at,
         answered_at: answered_at_str.map(|t| parse_datetime(&t)).transpose()?,
+    })
+}
+
+fn row_to_checklist_template(row: &rusqlite::Row<'_>) -> Result<ChecklistTemplate, CoreError> {
+    let items_json: String = row_get(row, 3)?;
+    Ok(ChecklistTemplate {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        title: row_get(row, 1)?,
+        category: row_get(row, 2)?,
+        items: serde_json::from_str(&items_json).unwrap_or_default(),
+        version: row_get::<i64>(row, 4)? as u32,
+        is_active: row_get::<i64>(row, 5)? != 0,
+        created_at: parse_datetime(&row_get::<String>(row, 6)?)?,
+        updated_at: parse_datetime(&row_get::<String>(row, 7)?)?,
+    })
+}
+
+fn row_to_checklist_run(row: &rusqlite::Row<'_>) -> Result<ChecklistRun, CoreError> {
+    let answers_json: String = row_get(row, 5)?;
+    Ok(ChecklistRun {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        template_id: parse_uuid(&row_get::<String>(row, 1)?)?,
+        daily_log_id: parse_uuid(&row_get::<String>(row, 2)?)?,
+        started_at: parse_datetime(&row_get::<String>(row, 3)?)?,
+        completed_at: row_get::<Option<String>>(row, 4)?
+            .map(|s| parse_datetime(&s))
+            .transpose()?,
+        answers: serde_json::from_str(&answers_json).unwrap_or_default(),
+    })
+}
+
+fn row_to_journal_entry(row: &rusqlite::Row<'_>) -> Result<JournalEntry, CoreError> {
+    use adiyutant_core::model::journal_entry::JournalEntryType;
+
+    let entry_type_raw: String = row_get(row, 3)?;
+    Ok(JournalEntry {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        daily_log_id: parse_uuid(&row_get::<String>(row, 1)?)?,
+        timestamp: parse_datetime(&row_get::<String>(row, 2)?)?,
+        entry_type: JournalEntryType::from_str(&entry_type_raw).ok_or_else(|| {
+            CoreError::InvalidInput(format!("invalid entry_type: {entry_type_raw}"))
+        })?,
+        summary: row_get(row, 4)?,
     })
 }
 
@@ -1906,6 +2238,76 @@ impl Store for NoopStore {
         Ok(())
     }
     fn delete_task_checkpoint(&self, _id: Id<TaskCheckpoint>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    // ── ChecklistTemplate (Noop) ──
+    fn insert_checklist_template(&self, _template: &ChecklistTemplate) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_checklist_template(
+        &self,
+        _id: Id<ChecklistTemplate>,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
+        Ok(None)
+    }
+    fn list_checklist_templates(&self) -> Result<Vec<ChecklistTemplate>, Self::Error> {
+        Ok(vec![])
+    }
+    fn list_checklist_templates_by_category(
+        &self,
+        _category: &str,
+    ) -> Result<Vec<ChecklistTemplate>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_checklist_template(&self, _template: &ChecklistTemplate) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn delete_checklist_template(&self, _id: Id<ChecklistTemplate>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    // ── ChecklistRun (Noop) ──
+    fn insert_checklist_run(&self, _run: &ChecklistRun) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_checklist_run(
+        &self,
+        _id: Id<ChecklistRun>,
+    ) -> Result<Option<ChecklistRun>, Self::Error> {
+        Ok(None)
+    }
+    fn list_checklist_runs_by_log(
+        &self,
+        _daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<ChecklistRun>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_checklist_run(&self, _run: &ChecklistRun) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn delete_checklist_run(&self, _id: Id<ChecklistRun>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    // ── JournalEntry (Noop) ──
+    fn insert_journal_entry(&self, _entry: &JournalEntry) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_journal_entry(
+        &self,
+        _id: Id<JournalEntry>,
+    ) -> Result<Option<JournalEntry>, Self::Error> {
+        Ok(None)
+    }
+    fn list_journal_entries_by_log(
+        &self,
+        _daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<JournalEntry>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_journal_entry(&self, _entry: &JournalEntry) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn delete_journal_entry(&self, _id: Id<JournalEntry>) -> Result<(), Self::Error> {
         Ok(())
     }
 }

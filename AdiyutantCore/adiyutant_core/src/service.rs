@@ -1,14 +1,17 @@
 use crate::current_activity::CurrentActivity;
 use crate::datetime::AdiyutantDateTime;
 use crate::dto::{
-    self, CurrentActivityDto, DayPlanDto, PlanItemDto, StartupViewDto, TodayViewDto, WaitingTaskDto,
+    self, ChecklistRunDto, ChecklistTemplateDto, CurrentActivityDto, DayPlanDto, JournalEntryDto,
+    PlanItemDto, StartupViewDto, TodayViewDto, WaitingTaskDto,
 };
 use crate::error::CoreError;
 use crate::id::Id;
 use crate::local_rule_gateway::LocalRuleAgentGateway;
+use crate::model::checklist_run::ChecklistRun;
 use crate::model::daily_log::DailyLog;
 use crate::model::day_plan::{EisenhowerQuadrant, PlanItem, PlanItemStatus, WaitingDecision};
 use crate::model::habit_event::HabitEvent;
+use crate::model::journal_entry::{JournalEntry, JournalEntryType};
 use crate::model::task_checkpoint::{CheckpointKind, TaskCheckpoint};
 use crate::startup::StartupState;
 use crate::store::Store;
@@ -343,6 +346,90 @@ impl AdiyutantCoreService {
 
         self.store.update_plan_item(&item)?;
         Ok(plan_item_to_dto(&item))
+    }
+
+    // ── Checklist Domain ───────────────────────
+
+    /// List all available checklist templates.
+    pub fn list_checklist_templates(
+        &self,
+        category: Option<&str>,
+    ) -> Result<Vec<ChecklistTemplateDto>, CoreError> {
+        let templates = if let Some(cat) = category {
+            self.store.list_checklist_templates_by_category(cat)?
+        } else {
+            self.store.list_checklist_templates()?
+        };
+        Ok(templates
+            .iter()
+            .map(|t| ChecklistTemplateDto {
+                id: t.id.value().to_string(),
+                title: t.title.clone(),
+                category: t.category.clone(),
+                item_count: t.items.len(),
+                is_active: t.is_active,
+            })
+            .collect())
+    }
+
+    /// Run a checklist (start a run for the first matching template by category).
+    pub fn run_checklist(&self, category: &str) -> Result<ChecklistRunDto, CoreError> {
+        let templates = self.store.list_checklist_templates_by_category(category)?;
+        let template = templates.first().ok_or_else(|| {
+            CoreError::NotFound(format!("no checklist template for category: {category}"))
+        })?;
+
+        let daily_log_id = self.get_or_create_today_log()?;
+        let run = ChecklistRun::new(template.id, daily_log_id);
+        self.store.insert_checklist_run(&run)?;
+
+        Ok(ChecklistRunDto {
+            id: run.id.value().to_string(),
+            template_title: template.title.clone(),
+            started_at: run.started_at.inner().to_rfc3339(),
+            completed_at: String::new(),
+            answer_count: 0,
+        })
+    }
+
+    // ── Journal Domain ─────────────────────────
+
+    /// List journal entries for today.
+    pub fn get_journal(&self) -> Result<Vec<JournalEntryDto>, CoreError> {
+        let today = chrono::Utc::now().date_naive();
+        let entries = if let Some(log) = self.store.get_daily_log_by_date(today)? {
+            self.store.list_journal_entries_by_log(log.id)?
+        } else {
+            vec![]
+        };
+        Ok(entries
+            .iter()
+            .map(|e| JournalEntryDto {
+                id: e.id.value().to_string(),
+                entry_type: e.entry_type.as_str().to_string(),
+                summary: e.summary.clone(),
+                timestamp: e.timestamp.inner().to_rfc3339(),
+            })
+            .collect())
+    }
+
+    /// Add a journal entry for today.
+    pub fn add_journal_entry(
+        &self,
+        entry_type: &str,
+        summary: &str,
+    ) -> Result<JournalEntryDto, CoreError> {
+        let entry_type = JournalEntryType::from_str(entry_type)
+            .ok_or_else(|| CoreError::InvalidInput(format!("unknown entry type: {entry_type}")))?;
+        let daily_log_id = self.get_or_create_today_log()?;
+        let entry = JournalEntry::new(daily_log_id, entry_type, summary.to_string());
+        self.store.insert_journal_entry(&entry)?;
+        Ok(JournalEntryDto {
+            id: entry.id.value().to_string(),
+            entry_type: entry.entry_type.as_str().to_string(),
+            summary: entry.summary,
+            timestamp: entry.timestamp.inner().to_rfc3339(),
+        })
     }
 }
 

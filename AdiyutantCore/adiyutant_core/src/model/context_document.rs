@@ -12,6 +12,11 @@ pub enum ContextDocumentType {
     Health,
     Work,
     Custom,
+    // LifeCoreProfile type tags (same ContentDocument model, new doc_type discriminators)
+    LifeCore,
+    RecoveryProtocol,
+    Tone,
+    PlanningPreferences,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

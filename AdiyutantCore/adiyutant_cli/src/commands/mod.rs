@@ -1,6 +1,8 @@
+pub mod checklist;
 pub mod context;
 pub mod daily;
 pub mod habit;
+pub mod journal;
 pub mod plan;
 pub mod suggest;
 pub mod time;

@@ -1,11 +1,14 @@
 pub mod action_proposal;
 pub mod alarm;
 pub mod check_in;
+pub mod checklist_run;
+pub mod checklist_template;
 pub mod context_document;
 pub mod daily_log;
 pub mod day_plan;
 pub mod habit;
 pub mod habit_event;
+pub mod journal_entry;
 pub mod nudge;
 pub mod plan;
 pub mod reminder;
@@ -16,6 +19,8 @@ pub mod timer;
 pub use action_proposal::ActionProposal;
 pub use alarm::AlarmDefinition;
 pub use check_in::CheckIn;
+pub use checklist_run::{ChecklistAnswer, ChecklistRun};
+pub use checklist_template::{ChecklistItem, ChecklistItemKind, ChecklistTemplate};
 pub use context_document::ContextDocument;
 pub use daily_log::DailyLog;
 pub use day_plan::{
@@ -23,6 +28,7 @@ pub use day_plan::{
 };
 pub use habit::Habit;
 pub use habit_event::HabitEvent;
+pub use journal_entry::{JournalEntry, JournalEntryType};
 pub use nudge::{NotificationInstructionDto, NudgeSource};
 pub use plan::Plan;
 pub use reminder::ReminderDefinition;

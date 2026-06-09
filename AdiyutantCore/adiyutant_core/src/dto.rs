@@ -99,6 +99,37 @@ pub struct NotificationInstructionDto {
     pub action_id: String,
 }
 
+// ─── Wave C: Checklist & Journal DTOs ─────────
+
+/// View model for a checklist template.
+#[derive(Debug, Clone)]
+pub struct ChecklistTemplateDto {
+    pub id: String,
+    pub title: String,
+    pub category: String,
+    pub item_count: usize,
+    pub is_active: bool,
+}
+
+/// View model for a checklist run.
+#[derive(Debug, Clone)]
+pub struct ChecklistRunDto {
+    pub id: String,
+    pub template_title: String,
+    pub started_at: String,
+    pub completed_at: String,
+    pub answer_count: usize,
+}
+
+/// View model for a journal entry.
+#[derive(Debug, Clone)]
+pub struct JournalEntryDto {
+    pub id: String,
+    pub entry_type: String,
+    pub summary: String,
+    pub timestamp: String,
+}
+
 // ─── helpers ──────────────────────────────────
 
 pub(crate) fn naive_date_to_string(d: NaiveDate) -> String {

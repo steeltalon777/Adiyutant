@@ -35,6 +35,10 @@ fn doc_type_display(dt: &ContextDocumentType) -> &'static str {
         ContextDocumentType::Health => "health",
         ContextDocumentType::Work => "work",
         ContextDocumentType::Custom => "custom",
+        ContextDocumentType::LifeCore => "life_core",
+        ContextDocumentType::RecoveryProtocol => "recovery_protocol",
+        ContextDocumentType::Tone => "tone",
+        ContextDocumentType::PlanningPreferences => "planning_preferences",
     }
 }
 

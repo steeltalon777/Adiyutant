@@ -1,6 +1,8 @@
 use crate::id::Id;
 use crate::model::action_proposal::ProposalStatus;
+use crate::model::checklist_template::ChecklistTemplate;
 use crate::model::day_plan::{PlanItem, PlanItemStatus};
+use crate::model::journal_entry::JournalEntry;
 use crate::model::task_checkpoint::TaskCheckpoint;
 use crate::model::*;
 use chrono::NaiveDate;
@@ -140,4 +142,38 @@ pub trait Store {
     ) -> Result<Vec<TaskCheckpoint>, Self::Error>;
     fn update_task_checkpoint(&self, cp: &TaskCheckpoint) -> Result<(), Self::Error>;
     fn delete_task_checkpoint(&self, id: Id<TaskCheckpoint>) -> Result<(), Self::Error>;
+
+    // ── ChecklistTemplate ──
+    fn insert_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error>;
+    fn get_checklist_template(
+        &self,
+        id: Id<ChecklistTemplate>,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error>;
+    fn list_checklist_templates_by_category(
+        &self,
+        category: &str,
+    ) -> Result<Vec<ChecklistTemplate>, Self::Error>;
+    fn list_checklist_templates(&self) -> Result<Vec<ChecklistTemplate>, Self::Error>;
+    fn update_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error>;
+    fn delete_checklist_template(&self, id: Id<ChecklistTemplate>) -> Result<(), Self::Error>;
+
+    // ── ChecklistRun ──
+    fn insert_checklist_run(&self, run: &ChecklistRun) -> Result<(), Self::Error>;
+    fn get_checklist_run(&self, id: Id<ChecklistRun>) -> Result<Option<ChecklistRun>, Self::Error>;
+    fn list_checklist_runs_by_log(
+        &self,
+        daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<ChecklistRun>, Self::Error>;
+    fn update_checklist_run(&self, run: &ChecklistRun) -> Result<(), Self::Error>;
+    fn delete_checklist_run(&self, id: Id<ChecklistRun>) -> Result<(), Self::Error>;
+
+    // ── JournalEntry ──
+    fn insert_journal_entry(&self, entry: &JournalEntry) -> Result<(), Self::Error>;
+    fn get_journal_entry(&self, id: Id<JournalEntry>) -> Result<Option<JournalEntry>, Self::Error>;
+    fn list_journal_entries_by_log(
+        &self,
+        daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<JournalEntry>, Self::Error>;
+    fn update_journal_entry(&self, entry: &JournalEntry) -> Result<(), Self::Error>;
+    fn delete_journal_entry(&self, id: Id<JournalEntry>) -> Result<(), Self::Error>;
 }
