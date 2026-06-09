@@ -25,7 +25,10 @@ mod tests {
     fn core_result_ok() {
         let result: CoreResult<i32> = Ok(42);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
+        #[allow(clippy::unnecessary_literal_unwrap)]
+        {
+            assert_eq!(result.unwrap(), 42);
+        }
     }
 
     #[test]
