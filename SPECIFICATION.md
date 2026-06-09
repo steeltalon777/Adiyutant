@@ -1,8 +1,8 @@
 # SPECIFICATION.md — Adiyutant
 
 Статус: черновик спецификации 0.1  
-Фаза проекта: bootstrap / проектирование ядра  
-Главный фокус ближайшей разработки: `AdiyutantCore` на Rust
+Фаза проекта: **MVP 0.1** (3 Rust crates, SQLite, CLI, 103 tests)  
+Главный фокус ближайшей разработки: `AdiyutantCore` реализован, переходим к UI/Agent Gateway
 
 ---
 

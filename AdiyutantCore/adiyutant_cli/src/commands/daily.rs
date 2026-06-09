@@ -127,25 +127,25 @@ pub fn cmd_checkin(store: &adiyutant_store::SqliteStore, args: &CheckinArgs) {
 
     // Update daily log with any parsed values
     let mut needs_update = false;
-    if energy.is_some() || mood.is_some() || sleep_score.is_some() {
-        if let Some(log) = store.get_daily_log_by_date(today).ok().flatten() {
-            let mut updated = log.clone();
-            if let Some(e) = energy {
-                updated.energy = Some(e);
-            }
-            if let Some(m) = mood {
-                updated.mood = Some(m);
-            }
-            if let Some(s) = sleep_score {
-                updated.sleep_score = Some(s);
-            }
-            if updated.energy != log.energy
-                || updated.mood != log.mood
-                || updated.sleep_score != log.sleep_score
-            {
-                let _ = store.update_daily_log(&updated);
-                needs_update = true;
-            }
+    if (energy.is_some() || mood.is_some() || sleep_score.is_some())
+        && let Some(log) = store.get_daily_log_by_date(today).ok().flatten()
+    {
+        let mut updated = log.clone();
+        if let Some(e) = energy {
+            updated.energy = Some(e);
+        }
+        if let Some(m) = mood {
+            updated.mood = Some(m);
+        }
+        if let Some(s) = sleep_score {
+            updated.sleep_score = Some(s);
+        }
+        if updated.energy != log.energy
+            || updated.mood != log.mood
+            || updated.sleep_score != log.sleep_score
+        {
+            let _ = store.update_daily_log(&updated);
+            needs_update = true;
         }
     }
 

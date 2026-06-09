@@ -17,7 +17,21 @@ AdiyutantCore (Rust, local-first)
 
 ## Current State
 
-**Current state: bootstrap repository only. No application code is implemented yet.**
+**MVP 0.1 in progress.** Core implemented with 3 Rust crates, SQLite persistence, CLI with 9 commands, 103 tests passing.
+
+### Implemented
+
+```
+AdiyutantCore/                   ← Cargo workspace
+├── adiyutant_core/               ← 66 tests
+│   ├── model/                    ← 10 domain entities
+│   ├── today_state.rs            ← Day state aggregator
+│   └── local_rule_gateway.rs     ← 6 local rules (no LLM)
+├── adiyutant_store/              ← 23 tests
+│   └── Store trait + SqliteStore ← 10 tables
+└── adiyutant_cli/                ← 14 tests (11 unit + 3 integration)
+    └── 9 commands via clap
+```
 
 ## Planned High-Level Architecture
 

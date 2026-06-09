@@ -70,11 +70,13 @@ Goal: First working interface to the Core.
 - [x] Context commands
 - [x] Local suggestions command
 
-## Phase 6 — Stabilization
+## Phase 6 — Stabilization [x] Done
+
+**Completed: 2026-06-08**
 
 Goal: Bring local Core to MVP 0.1 quality.
 
-- Test coverage pass
-- Documentation sync with implemented Core
-- MVP acceptance scenario
-- MVP 0.1 release marker
+- [x] Test coverage pass
+- [x] Documentation sync with implemented Core
+- [x] MVP acceptance scenario
+- [x] MVP 0.1 release marker

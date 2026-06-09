@@ -8,24 +8,22 @@ Planned features: alarm, timer, daily journal, calendar, habits, reminders, pers
 
 ## Current State
 
-**Status: bootstrap**
+**Status: MVP 0.1** — local-first Rust Core implemented.
 
-This repository contains documentation and directory structure only. No application code has been implemented yet.
+- **3 crates**: `adiyutant_core` (domain), `adiyutant_store` (SQLite), `adiyutant_cli` (CLI)
+- **9 CLI commands**: today, log, checkin, habit, timer, reminder, alarm, context, suggest
+- **10 SQLite tables**: DailyLog, CheckIn, Habit, HabitEvent, ReminderDefinition, AlarmDefinition, TimerDefinition, ContextDocument, Plan, ActionProposal
+- **103 tests**: 66 core + 23 store + 11 CLI unit + 3 CLI integration
+- **6 local rules** in `LocalRuleAgentGateway` — no LLM required
+- **0 external dependencies**: no server, no sync, no AI keys needed
 
 ## Repository Type
 
-Multi-project solution repository. Planned projects:
-
-- `AdiyutantCore` — Rust local-first core
-- `AdiyutantAndroid` — Android UI shell
-- `AdiyutantWeb` — Web/PWA client
-- `AdiyutantDesktop` — Desktop UI shell
-
-## Planned Solution Projects
+Multi-project solution repository:
 
 | Project | Status | Responsibility |
 |---------|--------|----------------|
-| AdiyutantCore | Planned | Domain logic, local storage, CLI |
+| AdiyutantCore | **Implemented (MVP 0.1)** | Domain logic, local storage, CLI |
 | AdiyutantAndroid | Planned | Android mobile UI |
 | AdiyutantWeb | Planned | Web/PWA dashboard |
 | AdiyutantDesktop | Planned | Desktop UI shell |
@@ -48,22 +46,15 @@ Key principles:
 - Backend/server is added later for sync, accounts, cloud backup, and AI relay.
 - LLM API keys must not be stored in mobile clients.
 
-## MVP Focus
+## Development Progress
 
-The first implementation target is **AdiyutantCore** — a portable Rust domain core with SQLite storage and CLI interface.
-
-MVP 0.1 scope: local-only organizer core. No server, no sync, no external AI.
-
-## What Is Not Implemented Yet
-
-- Rust workspace / Cargo.toml
-- Domain models
-- SQLite storage
-- CLI
-- Android / Web / Desktop UI
-- Backend / sync server
-- LLM / AI integration
-- Agent Gateway (OpenClaw or custom)
+1. Phase 0 — Repository Foundation ✅
+2. Phase 1 — Rust Core Workspace ✅
+3. Phase 2 — Domain Model ✅
+4. Phase 3 — Local Rules and Today State ✅
+5. Phase 4 — SQLite Storage ✅
+6. Phase 5 — CLI MVP ✅
+7. Phase 6 — Stabilization ✅
 
 ## Documentation Map
 
@@ -84,13 +75,5 @@ MVP 0.1 scope: local-only organizer core. No server, no sync, no external AI.
 | `docs/core-boundary.md` | Core boundary definition |
 | `docs/agent-gateway.md` | Agent Gateway definition |
 | `docs/sync-protocol.md` | Future sync protocol notes |
-
-## Development Priority
-
-1. Phase 0 — Repository Foundation (current)
-2. Phase 1 — Rust Core Workspace
-3. Phase 2 — Domain Model
-4. Phase 3 — Local Rules and Today State
-5. Phase 4 — SQLite Storage
-6. Phase 5 — CLI MVP
-7. Phase 6 — Stabilization
+| `docs/mvp-acceptance.md` | MVP 0.1 acceptance scenario |
+| `pipeline-state.json` | Pipeline phase state |

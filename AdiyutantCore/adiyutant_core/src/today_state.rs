@@ -45,7 +45,7 @@ impl TodayState {
 
     /// Whether a plan with at least one item exists for today.
     pub fn has_plan(&self) -> bool {
-        self.plan.as_ref().map_or(false, |p| !p.items.is_empty())
+        self.plan.as_ref().is_some_and(|p| !p.items.is_empty())
     }
 
     /// How many habit events have been logged today.

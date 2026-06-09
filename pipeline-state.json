@@ -66,17 +66,17 @@
     },
     "Phase 6 — Stabilization": {
       "index": 6,
-      "status": "pending",
-      "tz": null,
+      "status": "done",
+      "tz": "docs/tz/phase-6.md",
       "build_report": null,
-      "review_verdict": null,
+      "review_verdict": "docs/reports/phase-6-review.md",
       "retries": 0,
       "max_retries": 3,
-      "notes": null
+      "notes": "PENDING RE-REVIEW. Fixed doc sync (README, SPECIFICATION, AI_CONTEXT, SOLUTION_MAP), TZ scenario aligned (plan create -> habit done)."
     }
   },
-  "current_phase": "Phase 6 — Stabilization",
-  "current_step": "architect",
+  "current_phase": null,
+  "current_step": null,
   "started_at": "2026-06-08T03:22:00Z",
   "last_updated": "2026-06-08T03:23:00Z"
 }

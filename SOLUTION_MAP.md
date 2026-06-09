@@ -8,23 +8,25 @@ Adiyutant is structured as a multi-project solution with a local-first Rust core
 
 | Project | Status | Responsibility |
 |---------|--------|----------------|
-| AdiyutantCore | Planned | Rust local-first domain core |
+| AdiyutantCore | **Implemented (MVP 0.1)** | Rust local-first domain core |
+
+Core workspace: 3 crates, SQLite, CLI, 103 tests.
+
+| Crate | Tests | Role |
+|-------|-------|------|
+| `adiyutant_core` | 66 | Domain models, `TodayState`, `LocalRuleAgentGateway` |
+| `adiyutant_store` | 23 | `SqliteStore` with 10 tables |
+| `adiyutant_cli` | 14 (11 unit + 3 integration) | 9 CLI commands via clap |
+
+## Planned Projects
+
+| Project | Status | Responsibility |
+|---------|--------|----------------|
 | AdiyutantAndroid | Planned | Android UI shell |
 | AdiyutantWeb | Planned | Web/PWA client |
 | AdiyutantDesktop | Planned | Desktop shell |
-
-## Current Responsibility Map
-
-No project has implemented code yet. All projects are in planned/bootstrap state.
-
-## Planned Responsibility Map
-
-- **AdiyutantCore** — domain models, local storage, local rules, CLI, sync state preparation
-- **AdiyutantAndroid** — Android UI, platform alarms/notifications, permissions
-- **AdiyutantWeb** — Web/PWA dashboard, future cloud interface
-- **AdiyutantDesktop** — Desktop UI, system tray, local notifications
-- **Backend / Sync Server** — accounts, devices, sync, cloud backup, AI relay (not present yet)
-- **Agent Gateway** — LLM routing, tool execution, API key management (not present yet)
+| Backend / Sync Server | Not present | accounts, devices, sync, cloud backup, AI relay |
+| Agent Gateway | Not present (LocalRule only) | LLM routing, tool execution, API key management |
 
 ## Unknown / Not Decided
 

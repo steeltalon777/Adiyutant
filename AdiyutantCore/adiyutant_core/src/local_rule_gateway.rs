@@ -42,19 +42,17 @@ impl LocalRuleAgentGateway {
         }
 
         // Rule 2: Low sleep score → suggest recovery mode
-        if let Some(log) = &state.daily_log {
-            if let Some(score) = log.sleep_score {
-                if score < 6 {
-                    push(
-                        "set_recovery_mode",
-                        json!({
-                            "reason": "Low sleep score detected",
-                            "sleep_score": score,
-                            "suggestion": "Consider setting day mode to recovery"
-                        }),
-                    );
-                }
-            }
+        if let Some(score) = state.daily_log.as_ref().and_then(|log| log.sleep_score)
+            && score < 6
+        {
+            push(
+                "set_recovery_mode",
+                json!({
+                    "reason": "Low sleep score detected",
+                    "sleep_score": score,
+                    "suggestion": "Consider setting day mode to recovery"
+                }),
+            );
         }
 
         // Rule 3: No plan for today → suggest creating one
@@ -96,7 +94,7 @@ impl LocalRuleAgentGateway {
         if state.evening_check_in().is_none() {
             let now = chrono::Utc::now();
             let hour = now.format("%H").to_string().parse::<u32>().unwrap_or(0);
-            if hour >= 20 || hour < 6 {
+            if !(6..20).contains(&hour) {
                 push(
                     "shutdown",
                     json!({
