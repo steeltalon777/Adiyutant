@@ -8,6 +8,7 @@ use crate::commands::daily::{self, CheckinArgs};
 use crate::commands::habit::{self, HabitCmd};
 use crate::commands::suggest;
 use crate::commands::time::{self, AlarmCmd, ReminderCmd, TimerCmd};
+use crate::common::build_facade;
 
 #[derive(Parser)]
 #[command(name = "adiyutant")]
@@ -19,12 +20,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Show today's state
+    /// Show today's dashboard
     Today,
-    /// Show daily log for today
+    /// Show raw daily log for today
     Log,
     /// Create a check-in
     Checkin(CheckinArgs),
+    /// Show startup state / intent
+    Startup,
+    /// Show current activity
+    Current,
     /// Manage habits
     Habit {
         #[command(subcommand)]
@@ -60,7 +65,8 @@ fn main() {
     match &cli.command {
         Commands::Today => {
             let store = init_store_or_exit();
-            daily::cmd_today(&store);
+            let facade = build_facade(store);
+            daily::cmd_today(&facade);
         }
         Commands::Log => {
             let store = init_store_or_exit();
@@ -69,6 +75,41 @@ fn main() {
         Commands::Checkin(args) => {
             let store = init_store_or_exit();
             daily::cmd_checkin(&store, args);
+        }
+        Commands::Startup => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            match facade.get_startup_state() {
+                Ok(view) => {
+                    println!("Startup intent: {}", view.intent);
+                    println!("Reason: {}", view.reason);
+                }
+                Err(e) => {
+                    eprintln!("Error getting startup state: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::Current => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            match facade.get_current_activity() {
+                Ok(activity) => {
+                    println!("Date: {}", activity.date);
+                    println!("Activity: {}", activity.activity_kind);
+                    if !activity.active_task.is_empty() {
+                        println!("Active task: {}", activity.active_task);
+                    }
+                    if !activity.next_checkpoint_at.is_empty() {
+                        println!("Next checkpoint: {}", activity.next_checkpoint_at);
+                    }
+                    println!("→ {}", activity.recommended_prompt);
+                }
+                Err(e) => {
+                    eprintln!("Error getting current activity: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::Habit { cmd } => {
             let store = init_store_or_exit();

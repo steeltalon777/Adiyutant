@@ -1,5 +1,5 @@
 use adiyutant_core::model::context_document::{ContextDocument, ContextDocumentType};
-use adiyutant_store::Store;
+use adiyutant_core::store::Store;
 
 #[derive(clap::ValueEnum, Debug, Clone, PartialEq)]
 pub enum ContextTypeArg {

@@ -2,115 +2,11 @@ use adiyutant_core::error::CoreError;
 use adiyutant_core::id::Id;
 use adiyutant_core::model::action_proposal::ProposalStatus;
 use adiyutant_core::model::*;
+use adiyutant_core::store::Store;
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use rusqlite::Connection;
 use rusqlite::params;
-
-// ──────────────────────────────────────────────
-// Store trait — all 10 domain entities
-// ──────────────────────────────────────────────
-
-pub trait Store {
-    type Error;
-
-    // Bootstrap
-    fn migrate(&self) -> Result<(), Self::Error>;
-    fn health_check(&self) -> Result<(), Self::Error>;
-
-    // ── DailyLog ──
-    fn insert_daily_log(&self, log: &DailyLog) -> Result<(), Self::Error>;
-    fn get_daily_log(&self, id: Id<DailyLog>) -> Result<Option<DailyLog>, Self::Error>;
-    fn get_daily_log_by_date(&self, date: NaiveDate) -> Result<Option<DailyLog>, Self::Error>;
-    fn list_daily_logs(&self) -> Result<Vec<DailyLog>, Self::Error>;
-    fn update_daily_log(&self, log: &DailyLog) -> Result<(), Self::Error>;
-    fn delete_daily_log(&self, id: Id<DailyLog>) -> Result<(), Self::Error>;
-
-    // ── CheckIn ──
-    fn insert_check_in(&self, ci: &CheckIn) -> Result<(), Self::Error>;
-    fn get_check_in(&self, id: Id<CheckIn>) -> Result<Option<CheckIn>, Self::Error>;
-    fn list_check_ins_by_log(
-        &self,
-        daily_log_id: Id<DailyLog>,
-    ) -> Result<Vec<CheckIn>, Self::Error>;
-    fn update_check_in(&self, ci: &CheckIn) -> Result<(), Self::Error>;
-    fn delete_check_in(&self, id: Id<CheckIn>) -> Result<(), Self::Error>;
-
-    // ── Habit ──
-    fn insert_habit(&self, h: &Habit) -> Result<(), Self::Error>;
-    fn get_habit(&self, id: Id<Habit>) -> Result<Option<Habit>, Self::Error>;
-    fn list_habits(&self) -> Result<Vec<Habit>, Self::Error>;
-    fn update_habit(&self, h: &Habit) -> Result<(), Self::Error>;
-    fn delete_habit(&self, id: Id<Habit>) -> Result<(), Self::Error>;
-
-    // ── HabitEvent ──
-    fn insert_habit_event(&self, he: &HabitEvent) -> Result<(), Self::Error>;
-    fn get_habit_event(&self, id: Id<HabitEvent>) -> Result<Option<HabitEvent>, Self::Error>;
-    fn list_habit_events_by_habit(
-        &self,
-        habit_id: Id<Habit>,
-    ) -> Result<Vec<HabitEvent>, Self::Error>;
-    fn update_habit_event(&self, he: &HabitEvent) -> Result<(), Self::Error>;
-    fn delete_habit_event(&self, id: Id<HabitEvent>) -> Result<(), Self::Error>;
-
-    // ── ReminderDefinition ──
-    fn insert_reminder(&self, r: &ReminderDefinition) -> Result<(), Self::Error>;
-    fn get_reminder(
-        &self,
-        id: Id<ReminderDefinition>,
-    ) -> Result<Option<ReminderDefinition>, Self::Error>;
-    fn list_reminders(&self) -> Result<Vec<ReminderDefinition>, Self::Error>;
-    fn update_reminder(&self, r: &ReminderDefinition) -> Result<(), Self::Error>;
-    fn delete_reminder(&self, id: Id<ReminderDefinition>) -> Result<(), Self::Error>;
-
-    // ── AlarmDefinition ──
-    fn insert_alarm(&self, a: &AlarmDefinition) -> Result<(), Self::Error>;
-    fn get_alarm(&self, id: Id<AlarmDefinition>) -> Result<Option<AlarmDefinition>, Self::Error>;
-    fn list_alarms(&self) -> Result<Vec<AlarmDefinition>, Self::Error>;
-    fn update_alarm(&self, a: &AlarmDefinition) -> Result<(), Self::Error>;
-    fn delete_alarm(&self, id: Id<AlarmDefinition>) -> Result<(), Self::Error>;
-
-    // ── TimerDefinition ──
-    fn insert_timer(&self, t: &TimerDefinition) -> Result<(), Self::Error>;
-    fn get_timer(&self, id: Id<TimerDefinition>) -> Result<Option<TimerDefinition>, Self::Error>;
-    fn list_timers(&self) -> Result<Vec<TimerDefinition>, Self::Error>;
-    fn update_timer(&self, t: &TimerDefinition) -> Result<(), Self::Error>;
-    fn delete_timer(&self, id: Id<TimerDefinition>) -> Result<(), Self::Error>;
-
-    // ── ContextDocument ──
-    fn insert_context_document(&self, cd: &ContextDocument) -> Result<(), Self::Error>;
-    fn get_context_document(
-        &self,
-        id: Id<ContextDocument>,
-    ) -> Result<Option<ContextDocument>, Self::Error>;
-    fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error>;
-    fn update_context_document(&self, cd: &ContextDocument) -> Result<(), Self::Error>;
-    fn delete_context_document(&self, id: Id<ContextDocument>) -> Result<(), Self::Error>;
-
-    // ── Plan ──
-    fn insert_plan(&self, p: &Plan) -> Result<(), Self::Error>;
-    fn get_plan(&self, id: Id<Plan>) -> Result<Option<Plan>, Self::Error>;
-    fn get_plan_by_daily_log(
-        &self,
-        daily_log_id: Id<DailyLog>,
-    ) -> Result<Option<Plan>, Self::Error>;
-    fn update_plan(&self, p: &Plan) -> Result<(), Self::Error>;
-    fn delete_plan(&self, id: Id<Plan>) -> Result<(), Self::Error>;
-
-    // ── ActionProposal ──
-    fn insert_action_proposal(&self, ap: &ActionProposal) -> Result<(), Self::Error>;
-    fn get_action_proposal(
-        &self,
-        id: Id<ActionProposal>,
-    ) -> Result<Option<ActionProposal>, Self::Error>;
-    fn list_action_proposals(&self) -> Result<Vec<ActionProposal>, Self::Error>;
-    fn list_action_proposals_by_status(
-        &self,
-        status: ProposalStatus,
-    ) -> Result<Vec<ActionProposal>, Self::Error>;
-    fn update_action_proposal(&self, ap: &ActionProposal) -> Result<(), Self::Error>;
-    fn delete_action_proposal(&self, id: Id<ActionProposal>) -> Result<(), Self::Error>;
-}
 
 // ──────────────────────────────────────────────
 // Schema bootstrap

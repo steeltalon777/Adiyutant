@@ -1,7 +1,7 @@
 use adiyutant_core::model::alarm::AlarmDefinition;
 use adiyutant_core::model::reminder::ReminderDefinition;
 use adiyutant_core::model::timer::{TimerDefinition, TimerMode};
-use adiyutant_store::Store;
+use adiyutant_core::store::Store;
 use chrono::NaiveTime;
 
 #[derive(clap::Subcommand, Debug)]

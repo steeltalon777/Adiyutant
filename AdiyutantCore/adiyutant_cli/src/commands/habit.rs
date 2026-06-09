@@ -1,6 +1,6 @@
 use adiyutant_core::model::habit::Habit;
 use adiyutant_core::model::habit_event::{HabitEvent, HabitEventLevel, HabitEventStatus};
-use adiyutant_store::Store;
+use adiyutant_core::store::Store;
 
 #[derive(clap::Subcommand, Debug)]
 pub enum HabitCmd {

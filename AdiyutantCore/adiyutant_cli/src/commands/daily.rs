@@ -1,8 +1,8 @@
+use adiyutant_core::dto::TodayViewDto;
 use adiyutant_core::model::check_in::{CheckIn, CheckInType};
 use adiyutant_core::model::daily_log::DailyLog;
-use adiyutant_store::Store;
-
-use crate::common;
+use adiyutant_core::service::AdiyutantCoreService;
+use adiyutant_core::store::Store;
 
 /// Arguments for the `checkin` subcommand.
 #[derive(clap::Args, Debug, Clone)]
@@ -34,12 +34,50 @@ impl CheckinTypeArg {
     }
 }
 
-/// `adiyutant today` — show today's state.
-pub fn cmd_today(store: &adiyutant_store::SqliteStore) {
-    match common::build_today_state(store) {
-        Ok(state) => {
-            common::print_today_state(&state);
+/// Print a human-readable summary of `TodayViewDto`.
+pub fn print_today_view(today: &TodayViewDto) {
+    println!("── Today: {} ──", today.date);
+    println!("Mode: {}", today.mode);
+    println!(
+        "Sleep: {} | Energy: {} | Mood: {}",
+        today.sleep_score, today.energy, today.mood
+    );
+    println!(
+        "Check-ins: {} (morning: {}, evening: {})",
+        today.check_in_count,
+        if today.has_morning_check_in {
+            "yes"
+        } else {
+            "no"
+        },
+        if today.has_evening_check_in {
+            "yes"
+        } else {
+            "no"
         }
+    );
+    println!(
+        "Habits: {} tracked, {} done today",
+        today.habit_count, today.habit_events_done
+    );
+    if today.has_plan {
+        println!(
+            "Plan: {} ({} items)",
+            today.plan_title, today.plan_item_count
+        );
+        for item in &today.plan_items {
+            println!("  • {} [{}]", item.description, item.status);
+        }
+    } else {
+        println!("Plan: no plan");
+    }
+    println!("Suggestions: {}", today.suggestion_count);
+}
+
+/// `adiyutant today` — show today's state via facade.
+pub fn cmd_today(facade: &AdiyutantCoreService) {
+    match facade.get_today() {
+        Ok(view) => print_today_view(&view),
         Err(e) => {
             eprintln!("Error reading today's state: {e}");
             std::process::exit(1);
@@ -97,13 +135,11 @@ pub fn cmd_checkin(store: &adiyutant_store::SqliteStore, args: &CheckinArgs) {
         }
     };
 
-    // Parse text for structured data hints:
-    // Look for patterns like "sleep N", "энергия N", "energy N"
+    // Parse text for structured data hints
     let mut energy: Option<u8> = None;
     let mut mood: Option<u8> = None;
     let mut sleep_score: Option<u8> = None;
 
-    // Simple parsing for MVP
     for word in args.text.split_whitespace() {
         if let Some(rest) = word.strip_prefix("sleep=") {
             sleep_score = rest.parse::<u8>().ok();
@@ -114,7 +150,6 @@ pub fn cmd_checkin(store: &adiyutant_store::SqliteStore, args: &CheckinArgs) {
         }
     }
 
-    // Create the check-in
     let ci = CheckIn::new(
         daily_log.id,
         args.checkin_type.to_domain(),
@@ -149,7 +184,6 @@ pub fn cmd_checkin(store: &adiyutant_store::SqliteStore, args: &CheckinArgs) {
         }
     }
 
-    // Confirm
     let type_name = format!("{:?}", args.checkin_type).to_lowercase();
     println!("✅ {type_name} check-in recorded.");
     if needs_update {
