@@ -42,6 +42,14 @@ impl<T> Id<T> {
     pub fn value(&self) -> Uuid {
         self.value
     }
+
+    /// Create an Id from an existing Uuid.
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self {
+            value: uuid,
+            _marker: std::marker::PhantomData,
+        }
+    }
 }
 
 impl<T> Default for Id<T> {

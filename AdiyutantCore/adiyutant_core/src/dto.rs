@@ -9,7 +9,7 @@ use chrono::NaiveDate;
 /// View model for the "today" dashboard.
 #[derive(Debug, Clone)]
 pub struct TodayViewDto {
-    pub date: String, // ISO-8601 date
+    pub date: String,
     pub has_daily_log: bool,
     pub mode: String,
     pub sleep_score: String,
@@ -27,7 +27,7 @@ pub struct TodayViewDto {
     pub suggestion_count: usize,
 }
 
-/// Flat view of a single plan item.
+/// Flat view of a single plan item (legacy Plan model).
 #[derive(Debug, Clone)]
 pub struct PlanItemViewDto {
     pub description: String,
@@ -52,6 +52,51 @@ pub struct CurrentActivityDto {
     pub next_checkpoint_at: String,
     pub recommended_prompt: String,
     pub date: String,
+}
+
+// ─── Wave B: Planning DTOs ─────────────────────
+
+/// View model for a day plan.
+#[derive(Debug, Clone)]
+pub struct DayPlanDto {
+    pub id: String,
+    pub date: String,
+    pub items: Vec<PlanItemDto>,
+    pub item_count: usize,
+}
+
+/// View model for a single plan item (new PlanItem model).
+#[derive(Debug, Clone)]
+pub struct PlanItemDto {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub quadrant: String,
+    pub planned_start: String,
+    pub planned_end: String,
+    pub status: String,
+    pub priority: u8,
+    pub source: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// View model for a waiting task.
+#[derive(Debug, Clone)]
+pub struct WaitingTaskDto {
+    pub id: String,
+    pub title: String,
+    pub waiting_since: String,
+    pub review_due: String,
+}
+
+/// Instruction for the UI layer to display a notification.
+#[derive(Debug, Clone)]
+pub struct NotificationInstructionDto {
+    pub source: String,
+    pub title: String,
+    pub body: String,
+    pub action_id: String,
 }
 
 // ─── helpers ──────────────────────────────────

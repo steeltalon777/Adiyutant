@@ -3,10 +3,13 @@ pub mod alarm;
 pub mod check_in;
 pub mod context_document;
 pub mod daily_log;
+pub mod day_plan;
 pub mod habit;
 pub mod habit_event;
+pub mod nudge;
 pub mod plan;
 pub mod reminder;
+pub mod task_checkpoint;
 pub mod timer;
 
 // Re-exports for convenience
@@ -15,8 +18,13 @@ pub use alarm::AlarmDefinition;
 pub use check_in::CheckIn;
 pub use context_document::ContextDocument;
 pub use daily_log::DailyLog;
+pub use day_plan::{
+    DayPlan, EisenhowerQuadrant, PlanItem, PlanItemStatus, PlanningMode, WaitingDecision,
+};
 pub use habit::Habit;
 pub use habit_event::HabitEvent;
+pub use nudge::{NotificationInstructionDto, NudgeSource};
 pub use plan::Plan;
 pub use reminder::ReminderDefinition;
+pub use task_checkpoint::{CheckpointKind, CheckpointResponse, CheckpointStatus, TaskCheckpoint};
 pub use timer::TimerDefinition;

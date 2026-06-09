@@ -117,6 +117,32 @@ fn run_migration(conn: &Connection) -> Result<(), CoreError> {
             created_at TEXT NOT NULL,
             applied_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS plan_items (
+            id TEXT PRIMARY KEY,
+            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+            title TEXT NOT NULL,
+            description TEXT,
+            quadrant TEXT NOT NULL,
+            planned_start TEXT,
+            planned_end TEXT,
+            status TEXT NOT NULL DEFAULT 'Planned',
+            priority INTEGER NOT NULL DEFAULT 5,
+            source TEXT NOT NULL DEFAULT 'Manual',
+            waiting_review_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS task_checkpoints (
+            id TEXT PRIMARY KEY,
+            plan_item_id TEXT NOT NULL REFERENCES plan_items(id),
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Pending',
+            response TEXT,
+            created_at TEXT NOT NULL,
+            answered_at TEXT
+        );
         ",
     )
     .map_err(|e| CoreError::Storage(e.to_string()))
@@ -181,6 +207,18 @@ fn json_to_string<T: serde::Serialize>(val: &T) -> String {
 
 fn json_from_str<T: serde::de::DeserializeOwned>(s: &str) -> Result<T, CoreError> {
     serde_json::from_str(s).map_err(|e| CoreError::Internal(e.to_string()))
+}
+
+fn parse_datetime(s: &str) -> Result<adiyutant_core::datetime::AdiyutantDateTime, CoreError> {
+    deserialize_datetime(s)
+}
+
+fn row_get_datetime(
+    row: &rusqlite::Row<'_>,
+    idx: usize,
+) -> Result<adiyutant_core::datetime::AdiyutantDateTime, CoreError> {
+    let s: String = row_get(row, idx)?;
+    parse_datetime(&s)
 }
 
 /// Helper to extract a column from a SQLite row, mapping rusqlite errors to CoreError.
@@ -1184,6 +1222,233 @@ impl Store for SqliteStore {
         }
         Ok(())
     }
+
+    // ── PlanItem ──
+
+    fn insert_plan_item(&self, item: &PlanItem) -> Result<(), Self::Error> {
+        self.conn.execute(
+            "INSERT INTO plan_items (id, daily_log_id, title, description, quadrant, planned_start, planned_end, status, priority, source, waiting_review_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                uuid_to_string(item.id),
+                uuid_to_string(item.daily_log_id),
+                item.title,
+                item.description,
+                item.quadrant.as_str(),
+                item.planned_start.map(|t| t.format("%H:%M").to_string()),
+                item.planned_end.map(|t| t.format("%H:%M").to_string()),
+                item.status.as_str(),
+                item.priority,
+                item.source.as_str(),
+                item.waiting_review_at.map(|d| d.format("%Y-%m-%d").to_string()),
+                datetime_to_string(&item.created_at),
+                datetime_to_string(&item.updated_at),
+            ],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_plan_item(&self, id: Id<PlanItem>) -> Result<Option<PlanItem>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, daily_log_id, title, description, quadrant, planned_start, planned_end, status, priority, source, waiting_review_at, created_at, updated_at FROM plan_items WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_plan_item(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(item)) => Ok(Some(item?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_plan_items_by_log(
+        &self,
+        daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<PlanItem>, Self::Error> {
+        let log_id_str = uuid_to_string(daily_log_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, daily_log_id, title, description, quadrant, planned_start, planned_end, status, priority, source, waiting_review_at, created_at, updated_at FROM plan_items WHERE daily_log_id = ?1 ORDER BY priority ASC, created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![log_id_str], |row| Ok(row_to_plan_item(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(items)
+    }
+
+    fn update_plan_item(&self, item: &PlanItem) -> Result<(), Self::Error> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE plan_items SET title = ?1, description = ?2, quadrant = ?3, planned_start = ?4, planned_end = ?5, status = ?6, priority = ?7, source = ?8, waiting_review_at = ?9, updated_at = ?10 WHERE id = ?11",
+                params![
+                    item.title,
+                    item.description,
+                    item.quadrant.as_str(),
+                    item.planned_start.map(|t| t.format("%H:%M").to_string()),
+                    item.planned_end.map(|t| t.format("%H:%M").to_string()),
+                    item.status.as_str(),
+                    item.priority,
+                    item.source.as_str(),
+                    item.waiting_review_at.map(|d| d.format("%Y-%m-%d").to_string()),
+                    datetime_to_string(&item.updated_at),
+                    uuid_to_string(item.id),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("plan_item".into()));
+        }
+        Ok(())
+    }
+
+    fn delete_plan_item(&self, id: Id<PlanItem>) -> Result<(), Self::Error> {
+        let id_str = uuid_to_string(id);
+        let affected = self
+            .conn
+            .execute("DELETE FROM plan_items WHERE id = ?1", params![id_str])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("plan_item".into()));
+        }
+        Ok(())
+    }
+
+    fn list_plan_items_by_status(
+        &self,
+        status: PlanItemStatus,
+    ) -> Result<Vec<PlanItem>, Self::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, daily_log_id, title, description, quadrant, planned_start, planned_end, status, priority, source, waiting_review_at, created_at, updated_at FROM plan_items WHERE status = ?1 ORDER BY created_at DESC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![status.as_str()], |row| Ok(row_to_plan_item(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(items)
+    }
+
+    fn list_plan_items_due_for_review(
+        &self,
+        date: NaiveDate,
+    ) -> Result<Vec<PlanItem>, Self::Error> {
+        let date_str = date.format("%Y-%m-%d").to_string();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, daily_log_id, title, description, quadrant, planned_start, planned_end, status, priority, source, waiting_review_at, created_at, updated_at FROM plan_items WHERE status = 'Waiting' AND waiting_review_at <= ?1 ORDER BY waiting_review_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![date_str], |row| Ok(row_to_plan_item(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(items)
+    }
+
+    // ── TaskCheckpoint ──
+
+    fn insert_task_checkpoint(&self, cp: &TaskCheckpoint) -> Result<(), Self::Error> {
+        self.conn.execute(
+            "INSERT INTO task_checkpoints (id, plan_item_id, kind, status, response, created_at, answered_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                uuid_to_string(cp.id),
+                uuid_to_string(cp.plan_item_id),
+                cp.kind.as_str(),
+                cp.status.as_str(),
+                cp.response.as_ref().map(|r| r.as_str()),
+                datetime_to_string(&cp.created_at),
+                cp.answered_at.as_ref().map(datetime_to_string),
+            ],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_task_checkpoint(
+        &self,
+        id: Id<TaskCheckpoint>,
+    ) -> Result<Option<TaskCheckpoint>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, plan_item_id, kind, status, response, created_at, answered_at FROM task_checkpoints WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_task_checkpoint(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(cp)) => Ok(Some(cp?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_checkpoints_by_plan_item(
+        &self,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Vec<TaskCheckpoint>, Self::Error> {
+        let item_id_str = uuid_to_string(plan_item_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, plan_item_id, kind, status, response, created_at, answered_at FROM task_checkpoints WHERE plan_item_id = ?1 ORDER BY created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![item_id_str], |row| Ok(row_to_task_checkpoint(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut checkpoints = Vec::new();
+        for row in rows {
+            checkpoints.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(checkpoints)
+    }
+
+    fn update_task_checkpoint(&self, cp: &TaskCheckpoint) -> Result<(), Self::Error> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE task_checkpoints SET kind = ?1, status = ?2, response = ?3, answered_at = ?4 WHERE id = ?5",
+                params![
+                    cp.kind.as_str(),
+                    cp.status.as_str(),
+                    cp.response.as_ref().map(|r| r.as_str()),
+                    cp.answered_at.as_ref().map(datetime_to_string),
+                    uuid_to_string(cp.id),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("task_checkpoint".into()));
+        }
+        Ok(())
+    }
+
+    fn delete_task_checkpoint(&self, id: Id<TaskCheckpoint>) -> Result<(), Self::Error> {
+        let id_str = uuid_to_string(id);
+        let affected = self
+            .conn
+            .execute(
+                "DELETE FROM task_checkpoints WHERE id = ?1",
+                params![id_str],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("task_checkpoint".into()));
+        }
+        Ok(())
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -1319,6 +1584,70 @@ fn row_to_action_proposal(row: &rusqlite::Row<'_>) -> Result<ActionProposal, Cor
             Some(s) => Some(deserialize_datetime(&s)?),
             None => None,
         },
+    })
+}
+
+fn row_to_plan_item(row: &rusqlite::Row<'_>) -> Result<PlanItem, CoreError> {
+    use adiyutant_core::model::day_plan::{EisenhowerQuadrant, PlanItemStatus, PlanningMode};
+
+    let id: String = row_get(row, 0)?;
+    let daily_log_id: String = row_get(row, 1)?;
+    let title: String = row_get(row, 2)?;
+    let description: Option<String> = row_get(row, 3)?;
+    let quadrant_str: String = row_get(row, 4)?;
+    let planned_start_str: Option<String> = row_get(row, 5)?;
+    let planned_end_str: Option<String> = row_get(row, 6)?;
+    let status_str: String = row_get(row, 7)?;
+    let priority_i64: i64 = row_get(row, 8)?;
+    let source_str: String = row_get(row, 9)?;
+    let waiting_review_at_str: Option<String> = row_get(row, 10)?;
+    let created_at = row_get_datetime(row, 11)?;
+    let updated_at = row_get_datetime(row, 12)?;
+
+    Ok(PlanItem {
+        id: parse_uuid(&id)?,
+        daily_log_id: parse_uuid(&daily_log_id)?,
+        title,
+        description,
+        quadrant: EisenhowerQuadrant::from_str(&quadrant_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("invalid quadrant: {quadrant_str}")))?,
+        planned_start: planned_start_str.and_then(|t| NaiveTime::parse_from_str(&t, "%H:%M").ok()),
+        planned_end: planned_end_str.and_then(|t| NaiveTime::parse_from_str(&t, "%H:%M").ok()),
+        status: PlanItemStatus::from_str(&status_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("invalid status: {status_str}")))?,
+        priority: priority_i64 as u8,
+        source: PlanningMode::from_str(&source_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("invalid source: {source_str}")))?,
+        waiting_review_at: waiting_review_at_str
+            .and_then(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok()),
+        created_at,
+        updated_at,
+    })
+}
+
+fn row_to_task_checkpoint(row: &rusqlite::Row<'_>) -> Result<TaskCheckpoint, CoreError> {
+    use adiyutant_core::model::task_checkpoint::{
+        CheckpointKind, CheckpointResponse, CheckpointStatus,
+    };
+
+    let id: String = row_get(row, 0)?;
+    let plan_item_id: String = row_get(row, 1)?;
+    let kind_str: String = row_get(row, 2)?;
+    let status_str: String = row_get(row, 3)?;
+    let response_str: Option<String> = row_get(row, 4)?;
+    let created_at = row_get_datetime(row, 5)?;
+    let answered_at_str: Option<String> = row_get(row, 6)?;
+
+    Ok(TaskCheckpoint {
+        id: parse_uuid(&id)?,
+        plan_item_id: parse_uuid(&plan_item_id)?,
+        kind: CheckpointKind::from_str(&kind_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("invalid kind: {kind_str}")))?,
+        status: CheckpointStatus::from_str(&status_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("invalid status: {status_str}")))?,
+        response: response_str.and_then(|r| CheckpointResponse::from_str(&r)),
+        created_at,
+        answered_at: answered_at_str.map(|t| parse_datetime(&t)).transpose()?,
     })
 }
 
@@ -1523,6 +1852,60 @@ impl Store for NoopStore {
         Ok(())
     }
     fn delete_action_proposal(&self, _id: Id<ActionProposal>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    // ── PlanItem (Noop) ──
+    fn insert_plan_item(&self, _item: &PlanItem) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_plan_item(&self, _id: Id<PlanItem>) -> Result<Option<PlanItem>, Self::Error> {
+        Ok(None)
+    }
+    fn list_plan_items_by_log(
+        &self,
+        _daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<PlanItem>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_plan_item(&self, _item: &PlanItem) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn delete_plan_item(&self, _id: Id<PlanItem>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn list_plan_items_by_status(
+        &self,
+        _status: PlanItemStatus,
+    ) -> Result<Vec<PlanItem>, Self::Error> {
+        Ok(vec![])
+    }
+    fn list_plan_items_due_for_review(
+        &self,
+        _date: NaiveDate,
+    ) -> Result<Vec<PlanItem>, Self::Error> {
+        Ok(vec![])
+    }
+    // ── TaskCheckpoint (Noop) ──
+    fn insert_task_checkpoint(&self, _cp: &TaskCheckpoint) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_task_checkpoint(
+        &self,
+        _id: Id<TaskCheckpoint>,
+    ) -> Result<Option<TaskCheckpoint>, Self::Error> {
+        Ok(None)
+    }
+    fn list_checkpoints_by_plan_item(
+        &self,
+        _plan_item_id: Id<PlanItem>,
+    ) -> Result<Vec<TaskCheckpoint>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_task_checkpoint(&self, _cp: &TaskCheckpoint) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn delete_task_checkpoint(&self, _id: Id<TaskCheckpoint>) -> Result<(), Self::Error> {
         Ok(())
     }
 }

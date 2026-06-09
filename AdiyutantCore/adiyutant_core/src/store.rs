@@ -1,10 +1,12 @@
 use crate::id::Id;
 use crate::model::action_proposal::ProposalStatus;
+use crate::model::day_plan::{PlanItem, PlanItemStatus};
+use crate::model::task_checkpoint::TaskCheckpoint;
 use crate::model::*;
 use chrono::NaiveDate;
 
 // ──────────────────────────────────────────────
-// Store trait — all 10 domain entities
+// Store trait — all domain entities
 // ──────────────────────────────────────────────
 
 /// Persistence contract for all domain entities.
@@ -86,7 +88,7 @@ pub trait Store {
     fn update_context_document(&self, cd: &ContextDocument) -> Result<(), Self::Error>;
     fn delete_context_document(&self, id: Id<ContextDocument>) -> Result<(), Self::Error>;
 
-    // ── Plan ──
+    // ── Plan (legacy) ──
     fn insert_plan(&self, p: &Plan) -> Result<(), Self::Error>;
     fn get_plan(&self, id: Id<Plan>) -> Result<Option<Plan>, Self::Error>;
     fn get_plan_by_daily_log(
@@ -109,4 +111,33 @@ pub trait Store {
     ) -> Result<Vec<ActionProposal>, Self::Error>;
     fn update_action_proposal(&self, ap: &ActionProposal) -> Result<(), Self::Error>;
     fn delete_action_proposal(&self, id: Id<ActionProposal>) -> Result<(), Self::Error>;
+
+    // ── PlanItem (new) ──
+    fn insert_plan_item(&self, item: &PlanItem) -> Result<(), Self::Error>;
+    fn get_plan_item(&self, id: Id<PlanItem>) -> Result<Option<PlanItem>, Self::Error>;
+    fn list_plan_items_by_log(
+        &self,
+        daily_log_id: Id<DailyLog>,
+    ) -> Result<Vec<PlanItem>, Self::Error>;
+    fn update_plan_item(&self, item: &PlanItem) -> Result<(), Self::Error>;
+    fn delete_plan_item(&self, id: Id<PlanItem>) -> Result<(), Self::Error>;
+    fn list_plan_items_by_status(
+        &self,
+        status: PlanItemStatus,
+    ) -> Result<Vec<PlanItem>, Self::Error>;
+    fn list_plan_items_due_for_review(&self, date: NaiveDate)
+    -> Result<Vec<PlanItem>, Self::Error>;
+
+    // ── TaskCheckpoint ──
+    fn insert_task_checkpoint(&self, cp: &TaskCheckpoint) -> Result<(), Self::Error>;
+    fn get_task_checkpoint(
+        &self,
+        id: Id<TaskCheckpoint>,
+    ) -> Result<Option<TaskCheckpoint>, Self::Error>;
+    fn list_checkpoints_by_plan_item(
+        &self,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Vec<TaskCheckpoint>, Self::Error>;
+    fn update_task_checkpoint(&self, cp: &TaskCheckpoint) -> Result<(), Self::Error>;
+    fn delete_task_checkpoint(&self, id: Id<TaskCheckpoint>) -> Result<(), Self::Error>;
 }

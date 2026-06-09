@@ -6,8 +6,10 @@ use clap::{Parser, Subcommand};
 use crate::commands::context::{self, ContextCmd};
 use crate::commands::daily::{self, CheckinArgs};
 use crate::commands::habit::{self, HabitCmd};
+use crate::commands::plan::{self, PlanCmd};
 use crate::commands::suggest;
 use crate::commands::time::{self, AlarmCmd, ReminderCmd, TimerCmd};
+use crate::commands::waiting::{self, WaitingCmd};
 use crate::common::build_facade;
 
 #[derive(Parser)]
@@ -30,6 +32,11 @@ enum Commands {
     Startup,
     /// Show current activity
     Current,
+    /// Manage plans and plan items
+    Plan {
+        #[command(subcommand)]
+        cmd: PlanCmd,
+    },
     /// Manage habits
     Habit {
         #[command(subcommand)]
@@ -57,6 +64,11 @@ enum Commands {
     },
     /// Show local suggestions
     Suggest,
+    /// Manage waiting tasks
+    Waiting {
+        #[command(subcommand)]
+        cmd: WaitingCmd,
+    },
 }
 
 fn main() {
@@ -111,6 +123,11 @@ fn main() {
                 }
             }
         }
+        Commands::Plan { cmd } => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            plan::handle_plan(&facade, cmd);
+        }
         Commands::Habit { cmd } => {
             let store = init_store_or_exit();
             habit::handle(&store, cmd);
@@ -134,6 +151,11 @@ fn main() {
         Commands::Suggest => {
             let store = init_store_or_exit();
             suggest::cmd_suggest(&store);
+        }
+        Commands::Waiting { cmd } => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            waiting::handle_waiting(&facade, cmd);
         }
     }
 }
