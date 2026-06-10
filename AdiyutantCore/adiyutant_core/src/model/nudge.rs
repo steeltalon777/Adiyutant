@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// Origin of a nudge/notification instruction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NudgeSource {
     Checkpoint,
     LocalRule,
@@ -33,7 +35,7 @@ impl NudgeSource {
 ///
 /// This is the boundary DTO that the Android / CLI layer receives
 /// when a nudge should be shown to the user.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationInstructionDto {
     pub source: String,
     pub title: String,
