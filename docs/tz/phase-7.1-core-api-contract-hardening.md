@@ -645,13 +645,15 @@ To be filled by executor after each priority level.
 | P2 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
 | P2 | tests | `cargo test --workspace` | ✅ 183 passed |
 | P2 | domain | TimeProvider, checkpoint, checklist, journal events | ✅ 16 new tests |
+| P2 | checkpoint flow | `answer_checkpoint` one-call + `dismiss_checkpoint` | ✅ Pending→Answered/dismissed |
 | P3 | fmt | `cargo fmt --all -- --check` | ✅ clean |
 | P3 | check | `cargo check --workspace` | ✅ 0 errors |
 | P3 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
 | P3 | tests | `cargo test --workspace` | ✅ 183 passed |
 | P3 | compat | v0.1 → v0.2 migration test | ✅ migrate_v01_to_v02_preserves_data |
-| P3 | transaction | rollback test | ✅ transaction_rollback_on_error |
-| P4 | doc | `docs/ui-contract/android-core-contract.md` complete | ✅ 7 screens, 8 states |
+| P3 | transaction | composite methods use BEGIN/COMMIT | ✅ checkin, start/done/move plan, complete checklist |
+| P3 | rollback | SQLite ROLLBACK on composite error | ✅ tested via SqliteStore::with_transaction |
+| P4 | doc | `docs/ui-contract/android-core-contract.md` | ✅ v0.3.0, 7 screens, no stale content |
 | P4 | review | API doc consistency check | ✅ reviewed vs service.rs |
 
 ---
