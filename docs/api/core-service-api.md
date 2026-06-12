@@ -195,6 +195,19 @@ machine: `Pending → Shown → Answered`.
 Finds the first pending checkpoint across all active plan items and returns a
 notification instruction for the UI.
 
+### `dismiss_checkpoint(checkpoint_id)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `checkpoint_id` | `&str` | UUID of the checkpoint |
+
+- **Returns:** `()`
+- **Errors:** `INVALID_INPUT` (bad UUID, already answered/dismissed), `NOT_FOUND`, `STORAGE_ERROR`
+- **Stable:** yes
+
+Dismisses a pending or shown checkpoint without answering. Transitions
+`Pending → Dismissed` or `Shown → Dismissed`.
+
 ---
 
 ## Checklist Domain

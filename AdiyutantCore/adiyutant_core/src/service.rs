@@ -283,8 +283,7 @@ impl AdiyutantCoreService {
         );
 
         // Atomic: update_plan_item + insert_task_checkpoint + insert_journal_entry
-        self.store
-            .start_plan_item_composite(&item, &cp, &entry)?;
+        self.store.start_plan_item_composite(&item, &cp, &entry)?;
         Ok(plan_item_to_dto(&item))
     }
 
@@ -421,9 +420,8 @@ impl AdiyutantCoreService {
             .get_task_checkpoint(id)?
             .ok_or_else(|| CoreError::NotFound(format!("checkpoint {checkpoint_id}")))?;
 
-        let resp = CheckpointResponse::from_str(response).ok_or_else(|| {
-            CoreError::InvalidInput(format!("unknown response: {response}"))
-        })?;
+        let resp = CheckpointResponse::from_str(response)
+            .ok_or_else(|| CoreError::InvalidInput(format!("unknown response: {response}")))?;
 
         match cp.status {
             CheckpointStatus::Pending | CheckpointStatus::Shown => {
@@ -450,6 +448,14 @@ impl AdiyutantCoreService {
             let next_cp = TaskCheckpoint::new(item.id, next_kind);
             let _ = self.store.insert_task_checkpoint(&next_cp);
         }
+
+        // Journal auto-event: NudgeAnswered
+        let entry = JournalEntry::new(
+            item.daily_log_id,
+            JournalEntryType::NudgeAnswered,
+            format!("Checkpoint answered: {} → {:?}", cp.kind.as_str(), resp),
+        );
+        let _ = self.store.insert_journal_entry(&entry);
 
         Ok(plan_item_to_dto(&item))
     }
@@ -793,13 +799,18 @@ impl AdiyutantCoreService {
 
         // Build optional daily log update
         let daily_log_update = if sleep_score.is_some() || energy.is_some() || mood.is_some() {
-            self.store.get_daily_log(daily_log_id)?
-                .map(|mut log| {
-                    if let Some(s) = sleep_score { log.sleep_score = Some(s); }
-                    if let Some(e) = energy { log.energy = Some(e); }
-                    if let Some(m) = mood { log.mood = Some(m); }
-                    log
-                })
+            self.store.get_daily_log(daily_log_id)?.map(|mut log| {
+                if let Some(s) = sleep_score {
+                    log.sleep_score = Some(s);
+                }
+                if let Some(e) = energy {
+                    log.energy = Some(e);
+                }
+                if let Some(m) = mood {
+                    log.mood = Some(m);
+                }
+                log
+            })
         } else {
             None
         };
