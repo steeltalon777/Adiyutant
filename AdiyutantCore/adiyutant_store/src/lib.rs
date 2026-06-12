@@ -14,166 +14,117 @@ use rusqlite::params;
 
 fn run_migration(conn: &Connection) -> Result<(), CoreError> {
     conn.execute_batch(
-        "
-        CREATE TABLE IF NOT EXISTS daily_logs (
-            id TEXT PRIMARY KEY,
-            date TEXT NOT NULL,
-            mode TEXT,
-            sleep_score INTEGER,
-            energy INTEGER,
-            mood INTEGER,
-            raw_notes TEXT,
-            ai_summary TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS check_ins (
-            id TEXT PRIMARY KEY,
-            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
-            check_in_type TEXT NOT NULL,
-            raw_input TEXT NOT NULL,
-            structured_data TEXT,
-            agent_response TEXT,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS habits (
-            id TEXT PRIMARY KEY,
+        "CREATE TABLE IF NOT EXISTS schema_versions (
+            version INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
-            description TEXT,
-            frequency TEXT,
-            target TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS habit_events (
-            id TEXT PRIMARY KEY,
-            habit_id TEXT NOT NULL REFERENCES habits(id),
-            date_time TEXT NOT NULL,
-            status TEXT NOT NULL,
-            level TEXT NOT NULL,
-            comment TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS reminders (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            message TEXT,
-            schedule_rule TEXT NOT NULL,
-            next_fire_at TEXT,
-            enabled INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS alarms (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            time TEXT NOT NULL,
-            repeat_rule TEXT,
-            enabled INTEGER NOT NULL DEFAULT 1,
-            platform_binding_id TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS timers (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            duration_seconds INTEGER NOT NULL,
-            mode TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS context_documents (
-            id TEXT PRIMARY KEY,
-            doc_type TEXT NOT NULL,
-            title TEXT NOT NULL,
-            content_markdown TEXT NOT NULL,
-            version INTEGER NOT NULL DEFAULT 1,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS plans (
-            id TEXT PRIMARY KEY,
-            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
-            title TEXT NOT NULL,
-            items_json TEXT NOT NULL DEFAULT '[]',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS action_proposals (
-            id TEXT PRIMARY KEY,
-            source TEXT NOT NULL,
-            proposal_type TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
-            status TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            applied_at TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS plan_items (
-            id TEXT PRIMARY KEY,
-            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
-            title TEXT NOT NULL,
-            description TEXT,
-            quadrant TEXT NOT NULL,
-            planned_start TEXT,
-            planned_end TEXT,
-            status TEXT NOT NULL DEFAULT 'Planned',
-            priority INTEGER NOT NULL DEFAULT 5,
-            source TEXT NOT NULL DEFAULT 'Manual',
-            waiting_review_at TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS task_checkpoints (
-            id TEXT PRIMARY KEY,
-            plan_item_id TEXT NOT NULL REFERENCES plan_items(id),
-            kind TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'Pending',
-            response TEXT,
-            created_at TEXT NOT NULL,
-            answered_at TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS checklist_templates (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            category TEXT NOT NULL,
-            items_json TEXT NOT NULL DEFAULT '[]',
-            version INTEGER NOT NULL DEFAULT 1,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS checklist_runs (
-            id TEXT PRIMARY KEY,
-            template_id TEXT NOT NULL REFERENCES checklist_templates(id),
-            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
-            started_at TEXT NOT NULL,
-            completed_at TEXT,
-            answers_json TEXT NOT NULL DEFAULT '[]'
-        );
-
-        CREATE TABLE IF NOT EXISTS journal_entries (
-            id TEXT PRIMARY KEY,
-            daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
-            timestamp TEXT NOT NULL,
-            entry_type TEXT NOT NULL,
-            summary TEXT NOT NULL
-        );
-        ",
+            applied_at TEXT NOT NULL
+        );",
     )
-    .map_err(|e| CoreError::Storage(e.to_string()))
+    .map_err(|e| CoreError::Storage(e.to_string()))?;
+
+    let current: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_versions",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    if current < 1 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS daily_logs (
+                id TEXT PRIMARY KEY, date TEXT NOT NULL, mode TEXT,
+                sleep_score INTEGER, energy INTEGER, mood INTEGER,
+                raw_notes TEXT, ai_summary TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS check_ins (
+                id TEXT PRIMARY KEY, daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+                check_in_type TEXT NOT NULL, raw_input TEXT NOT NULL, structured_data TEXT,
+                agent_response TEXT, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS habits (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, frequency TEXT,
+                target TEXT, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS habit_events (
+                id TEXT PRIMARY KEY, habit_id TEXT NOT NULL REFERENCES habits(id),
+                date_time TEXT NOT NULL, status TEXT NOT NULL, level TEXT NOT NULL, comment TEXT
+            );
+            CREATE TABLE IF NOT EXISTS reminders (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, message TEXT,
+                schedule_rule TEXT NOT NULL, next_fire_at TEXT, enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS alarms (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, time TEXT NOT NULL, repeat_rule TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1, platform_binding_id TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS timers (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, duration_seconds INTEGER NOT NULL,
+                mode TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS context_documents (
+                id TEXT PRIMARY KEY, doc_type TEXT NOT NULL, title TEXT NOT NULL,
+                content_markdown TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS plans (
+                id TEXT PRIMARY KEY, daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+                title TEXT NOT NULL, items_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS action_proposals (
+                id TEXT PRIMARY KEY, source TEXT NOT NULL, proposal_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL, status TEXT NOT NULL,
+                created_at TEXT NOT NULL, applied_at TEXT
+            );
+        ").map_err(|e| CoreError::Storage(e.to_string()))?;
+        mark_migration(conn, 1, "v0.1-initial")?;
+    }
+
+    if current < 2 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS plan_items (
+                id TEXT PRIMARY KEY, daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+                title TEXT NOT NULL, description TEXT, quadrant TEXT NOT NULL,
+                planned_start TEXT, planned_end TEXT, status TEXT NOT NULL DEFAULT 'Planned',
+                priority INTEGER NOT NULL DEFAULT 5, source TEXT NOT NULL DEFAULT 'Manual',
+                waiting_review_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS task_checkpoints (
+                id TEXT PRIMARY KEY, plan_item_id TEXT NOT NULL REFERENCES plan_items(id),
+                kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', response TEXT,
+                created_at TEXT NOT NULL, answered_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS checklist_templates (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL,
+                items_json TEXT NOT NULL DEFAULT '[]', version INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS checklist_runs (
+                id TEXT PRIMARY KEY, template_id TEXT NOT NULL REFERENCES checklist_templates(id),
+                daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+                started_at TEXT NOT NULL, completed_at TEXT, answers_json TEXT NOT NULL DEFAULT '[]'
+            );
+            CREATE TABLE IF NOT EXISTS journal_entries (
+                id TEXT PRIMARY KEY, daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+                timestamp TEXT NOT NULL, entry_type TEXT NOT NULL, summary TEXT NOT NULL
+            );
+        ").map_err(|e| CoreError::Storage(e.to_string()))?;
+        mark_migration(conn, 2, "v0.2-planning-checklists-journal")?;
+    }
+
+    Ok(())
+}
+
+fn mark_migration(conn: &Connection, version: i64, name: &str) -> Result<(), CoreError> {
+    conn.execute(
+        "INSERT INTO schema_versions (version, name, applied_at) VALUES (?1, ?2, ?3)",
+        params![version, name, chrono::Utc::now().to_rfc3339()],
+    )
+    .map_err(|e| CoreError::Storage(e.to_string()))?;
+    Ok(())
 }
 
 // ──────────────────────────────────────────────
@@ -274,6 +225,27 @@ impl SqliteStore {
     pub fn new_in_memory() -> Result<Self, CoreError> {
         let conn = Connection::open_in_memory().map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(Self { conn })
+    }
+
+    pub fn with_transaction<F, T>(&self, f: F) -> Result<T, CoreError>
+    where
+        F: FnOnce(&Connection) -> Result<T, CoreError>,
+    {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match f(&self.conn) {
+            Ok(val) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(val)
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
     }
 }
 
@@ -3100,5 +3072,118 @@ mod tests {
         store.insert_journal_entry(&entry).unwrap();
         store.delete_journal_entry(entry.id).unwrap();
         assert!(store.get_journal_entry(entry.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn migrate_v01_to_v02_preserves_data() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        conn.execute_batch("
+            CREATE TABLE daily_logs (
+                id TEXT PRIMARY KEY, date TEXT NOT NULL, mode TEXT,
+                sleep_score INTEGER, energy INTEGER, mood INTEGER,
+                raw_notes TEXT, ai_summary TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE check_ins (
+                id TEXT PRIMARY KEY, daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+                check_in_type TEXT NOT NULL, raw_input TEXT NOT NULL, structured_data TEXT,
+                agent_response TEXT, created_at TEXT NOT NULL
+            );
+            CREATE TABLE habits (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, frequency TEXT,
+                target TEXT, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE habit_events (
+                id TEXT PRIMARY KEY, habit_id TEXT NOT NULL REFERENCES habits(id),
+                date_time TEXT NOT NULL, status TEXT NOT NULL, level TEXT NOT NULL, comment TEXT
+            );
+            CREATE TABLE reminders (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, message TEXT,
+                schedule_rule TEXT NOT NULL, next_fire_at TEXT, enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE alarms (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, time TEXT NOT NULL, repeat_rule TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1, platform_binding_id TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE timers (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, duration_seconds INTEGER NOT NULL,
+                mode TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE context_documents (
+                id TEXT PRIMARY KEY, doc_type TEXT NOT NULL, title TEXT NOT NULL,
+                content_markdown TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE plans (
+                id TEXT PRIMARY KEY, daily_log_id TEXT NOT NULL REFERENCES daily_logs(id),
+                title TEXT NOT NULL, items_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE action_proposals (
+                id TEXT PRIMARY KEY, source TEXT NOT NULL, proposal_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL, status TEXT NOT NULL,
+                created_at TEXT NOT NULL, applied_at TEXT
+            );
+        ").unwrap();
+
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO daily_logs (id, date, mode, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params!["log-1", "2026-06-09", "normal", &now, &now],
+        ).unwrap();
+
+        run_migration(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM daily_logs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        conn.query_row("SELECT COUNT(*) FROM plan_items", [], |_| Ok(()))
+            .expect("plan_items table should exist");
+        conn.query_row("SELECT COUNT(*) FROM journal_entries", [], |_| Ok(()))
+            .expect("journal_entries table should exist");
+        conn.query_row("SELECT COUNT(*) FROM checklist_templates", [], |_| Ok(()))
+            .expect("checklist_templates table should exist");
+
+        let version_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM schema_versions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version_count, 2);
+    }
+
+    #[test]
+    fn transaction_rollback_on_error() {
+        let store = SqliteStore::new_in_memory().unwrap();
+        store.migrate().unwrap();
+
+        let log = make_daily_log("2026-06-09");
+        store.insert_daily_log(&log).unwrap();
+
+        let result: Result<(), CoreError> = store.with_transaction(|conn| {
+            conn.execute(
+                "INSERT INTO check_ins (id, daily_log_id, check_in_type, raw_input, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["ci-1", uuid_to_string(log.id), "\"Morning\"", "test", &chrono::Utc::now().to_rfc3339()],
+            ).map_err(|e| CoreError::Storage(e.to_string()))?;
+
+            Err(CoreError::InvalidInput("forced rollback".into()))
+        });
+
+        assert!(result.is_err());
+
+        let ci_count: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM check_ins WHERE id = 'ci-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(
+            ci_count, 0,
+            "Transaction rollback should have removed the inserted row"
+        );
     }
 }

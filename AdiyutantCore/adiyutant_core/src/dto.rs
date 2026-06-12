@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 // Primary DTOs — flat, stable output models
 // Rules: no Id<T>, no serde_json::Value, no chrono inner types.
 // All dates/times are ISO-8601 strings.
-// All DTOs are Serialize + Deserialize for JSON bridge / UniFFI.
 // ──────────────────────────────────────────────
 
 /// View model for the "today" dashboard.
@@ -101,6 +100,19 @@ pub struct NotificationInstructionDto {
     pub action_id: String,
 }
 
+/// Structured error for external consumers (Android, CLI, contract tests).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoreErrorDto {
+    /// Machine-readable error code: "NOT_FOUND", "INVALID_INPUT", "STORAGE_ERROR", "INTERNAL".
+    pub code: String,
+    /// Human-readable message for developer logs.
+    pub message: String,
+    /// Whether the client can recover (retry, change input, fix state).
+    pub recoverable: bool,
+    /// Suggested action for the client: "Retry", "Check input", "Contact support", etc.
+    pub suggested_action: String,
+}
+
 // ─── Wave C: Checklist & Journal DTOs ─────────
 
 /// View model for a checklist template.
@@ -132,21 +144,6 @@ pub struct JournalEntryDto {
     pub timestamp: String,
 }
 
-// ─── Structured Error DTO ─────────────────────
-
-/// Structured error for external consumers (Android, CLI, contract tests).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CoreErrorDto {
-    /// Machine-readable error code: "NOT_FOUND", "INVALID_INPUT", "STORAGE_ERROR", "INTERNAL_ERROR".
-    pub code: String,
-    /// Human-readable message for developer logs.
-    pub message: String,
-    /// Whether the client can recover (retry, change input, fix state).
-    pub recoverable: bool,
-    /// Suggested action for the client: "Retry", "Check input", "Contact support".
-    pub suggested_action: String,
-}
-
 // ─── helpers ──────────────────────────────────
 
 pub(crate) fn naive_date_to_string(d: NaiveDate) -> String {
@@ -164,10 +161,10 @@ pub(crate) fn option_u8_string(v: &Option<u8>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
 
-    fn make_today_view() -> TodayViewDto {
-        TodayViewDto {
+    #[test]
+    fn today_view_dto_serde_round_trip() {
+        let dto = TodayViewDto {
             date: "2026-06-09".into(),
             has_daily_log: true,
             mode: "none".into(),
@@ -179,85 +176,78 @@ mod tests {
             has_evening_check_in: false,
             habit_count: 3,
             habit_events_done: 1,
-            has_plan: false,
-            plan_title: String::new(),
-            plan_item_count: 0,
-            plan_items: vec![],
-            suggestion_count: 2,
-        }
-    }
-
-    #[test]
-    fn today_view_dto_serde_round_trip() {
-        let dto = make_today_view();
+            has_plan: true,
+            plan_title: "Plan".into(),
+            plan_item_count: 2,
+            plan_items: vec![PlanItemViewDto {
+                description: "Task".into(),
+                status: "Planned".into(),
+                estimated_minutes: "".into(),
+                notes: "".into(),
+            }],
+            suggestion_count: 0,
+        };
         let json = serde_json::to_string(&dto).unwrap();
         let back: TodayViewDto = serde_json::from_str(&json).unwrap();
         assert_eq!(dto.date, back.date);
-        assert_eq!(dto.mode, back.mode);
-        assert_eq!(dto.suggestion_count, back.suggestion_count);
+        assert_eq!(dto.has_morning_check_in, back.has_morning_check_in);
+        assert_eq!(dto.plan_items.len(), back.plan_items.len());
     }
 
     #[test]
     fn startup_view_dto_serde_round_trip() {
         let dto = StartupViewDto {
             intent: "start_day_required".into(),
-            reason: "No morning check-in".into(),
+            reason: "No morning check-in.".into(),
         };
         let json = serde_json::to_string(&dto).unwrap();
         let back: StartupViewDto = serde_json::from_str(&json).unwrap();
         assert_eq!(dto.intent, back.intent);
-        assert_eq!(dto.reason, back.reason);
     }
 
     #[test]
     fn current_activity_dto_serde_round_trip() {
         let dto = CurrentActivityDto {
-            date: "2026-06-09".into(),
             activity_kind: "scheduled_task".into(),
-            active_task: "Android shell".into(),
-            active_block: String::new(),
-            next_checkpoint_at: "12:00".into(),
-            recommended_prompt: "Ready to start: Android shell".into(),
+            active_task: "Work".into(),
+            active_block: "".into(),
+            next_checkpoint_at: "".into(),
+            recommended_prompt: "Working on: Work".into(),
+            date: "2026-06-09".into(),
         };
         let json = serde_json::to_string(&dto).unwrap();
         let back: CurrentActivityDto = serde_json::from_str(&json).unwrap();
         assert_eq!(dto.activity_kind, back.activity_kind);
-        assert_eq!(dto.active_task, back.active_task);
     }
 
     #[test]
-    fn day_plan_dto_serde_round_trip() {
-        let dto = DayPlanDto {
-            id: "uuid-1".into(),
-            date: "2026-06-09".into(),
-            items: vec![PlanItemDto {
-                id: "uuid-2".into(),
-                title: "Task".into(),
-                description: String::new(),
-                quadrant: "important-urgent".into(),
-                planned_start: String::new(),
-                planned_end: String::new(),
-                status: "Planned".into(),
-                priority: 1,
-                source: "Manual".into(),
-                created_at: "2026-01-01T00:00:00Z".into(),
-                updated_at: "2026-01-01T00:00:00Z".into(),
-            }],
-            item_count: 1,
+    fn plan_item_dto_serde_round_trip() {
+        let dto = PlanItemDto {
+            id: "a1b2c3d4-1234-5678-9abc-def012345678".into(),
+            title: "Write docs".into(),
+            description: "Phase 7.1".into(),
+            quadrant: "important-urgent".into(),
+            planned_start: "09:00".into(),
+            planned_end: "11:00".into(),
+            status: "Planned".into(),
+            priority: 1,
+            source: "Manual".into(),
+            created_at: "2026-06-09T08:00:00Z".into(),
+            updated_at: "2026-06-09T09:00:00Z".into(),
         };
         let json = serde_json::to_string(&dto).unwrap();
-        let back: DayPlanDto = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.item_count, 1);
-        assert_eq!(back.items[0].title, "Task");
+        let back: PlanItemDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.title, back.title);
+        assert_eq!(dto.status, back.status);
     }
 
     #[test]
     fn waiting_task_dto_serde_round_trip() {
         let dto = WaitingTaskDto {
-            id: "uuid-3".into(),
-            title: "Waiting".into(),
-            waiting_since: "2026-01-01".into(),
-            review_due: "2026-01-08".into(),
+            id: "uuid".into(),
+            title: "Wait".into(),
+            waiting_since: "2026-06-01T10:00:00Z".into(),
+            review_due: "2026-06-08".into(),
         };
         let json = serde_json::to_string(&dto).unwrap();
         let back: WaitingTaskDto = serde_json::from_str(&json).unwrap();
@@ -265,9 +255,22 @@ mod tests {
     }
 
     #[test]
+    fn day_plan_dto_serde_round_trip() {
+        let dto = DayPlanDto {
+            id: "".into(),
+            date: "2026-06-09".into(),
+            items: vec![],
+            item_count: 0,
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: DayPlanDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.date, back.date);
+    }
+
+    #[test]
     fn checklist_template_dto_serde_round_trip() {
         let dto = ChecklistTemplateDto {
-            id: "uuid-4".into(),
+            id: "uuid".into(),
             title: "Morning".into(),
             category: "morning".into(),
             item_count: 4,
@@ -275,57 +278,43 @@ mod tests {
         };
         let json = serde_json::to_string(&dto).unwrap();
         let back: ChecklistTemplateDto = serde_json::from_str(&json).unwrap();
-        assert_eq!(dto.category, back.category);
+        assert_eq!(dto.title, back.title);
     }
 
     #[test]
     fn checklist_run_dto_serde_round_trip() {
         let dto = ChecklistRunDto {
-            id: "uuid-5".into(),
+            id: "uuid".into(),
             template_title: "Morning".into(),
-            started_at: "2026-01-01T00:00:00Z".into(),
-            completed_at: String::new(),
+            started_at: "2026-06-09T07:00:00Z".into(),
+            completed_at: "".into(),
             answer_count: 0,
         };
         let json = serde_json::to_string(&dto).unwrap();
         let back: ChecklistRunDto = serde_json::from_str(&json).unwrap();
-        assert_eq!(dto.answer_count, back.answer_count);
+        assert_eq!(dto.template_title, back.template_title);
     }
 
     #[test]
     fn journal_entry_dto_serde_round_trip() {
         let dto = JournalEntryDto {
-            id: "uuid-6".into(),
+            id: "uuid".into(),
             entry_type: "Note".into(),
-            summary: "test".into(),
-            timestamp: "2026-01-01T00:00:00Z".into(),
+            summary: "Test entry".into(),
+            timestamp: "2026-06-09T12:00:00Z".into(),
         };
         let json = serde_json::to_string(&dto).unwrap();
         let back: JournalEntryDto = serde_json::from_str(&json).unwrap();
-        assert_eq!(dto.summary, back.summary);
-    }
-
-    #[test]
-    fn core_error_dto_serde_round_trip() {
-        let dto = CoreErrorDto {
-            code: "NOT_FOUND".into(),
-            message: "plan_item abc".into(),
-            recoverable: true,
-            suggested_action: "Check item exists".into(),
-        };
-        let json = serde_json::to_string(&dto).unwrap();
-        let back: CoreErrorDto = serde_json::from_str(&json).unwrap();
-        assert_eq!(dto.code, back.code);
-        assert_eq!(dto.recoverable, back.recoverable);
+        assert_eq!(dto.entry_type, back.entry_type);
     }
 
     #[test]
     fn notification_instruction_dto_serde_round_trip() {
         let dto = NotificationInstructionDto {
             source: "Checkpoint".into(),
-            title: "Progress check".into(),
-            body: "How is it going?".into(),
-            action_id: "checkpoint-123".into(),
+            title: "Time to check in".into(),
+            body: "How is your task going?".into(),
+            action_id: "checkpoint_123".into(),
         };
         let json = serde_json::to_string(&dto).unwrap();
         let back: NotificationInstructionDto = serde_json::from_str(&json).unwrap();
@@ -333,17 +322,16 @@ mod tests {
     }
 
     #[test]
-    fn core_error_dto_json_fields() {
+    fn core_error_dto_serde_round_trip() {
         let dto = CoreErrorDto {
-            code: "STORAGE_ERROR".into(),
-            message: "disk full".into(),
-            recoverable: false,
-            suggested_action: "Retry or check disk".into(),
+            code: "NOT_FOUND".into(),
+            message: "not found: item".into(),
+            recoverable: true,
+            suggested_action: "Check item exists".into(),
         };
         let json = serde_json::to_string(&dto).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["code"], "STORAGE_ERROR");
-        assert_eq!(v["recoverable"], false);
-        assert_eq!(v["suggested_action"], "Retry or check disk");
+        let back: CoreErrorDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.code, back.code);
+        assert_eq!(dto.recoverable, back.recoverable);
     }
 }

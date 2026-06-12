@@ -8,4 +8,5 @@ pub mod model;
 pub mod service;
 pub mod startup;
 pub mod store;
+pub mod time_provider;
 pub mod today_state;

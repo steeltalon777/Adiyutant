@@ -1,6 +1,5 @@
-use thiserror::Error;
-
 use crate::dto::CoreErrorDto;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum CoreError {
@@ -17,39 +16,38 @@ pub enum CoreError {
     Storage(String),
 }
 
+pub type CoreResult<T> = Result<T, CoreError>;
+
 impl CoreError {
-    /// Map to a structured error DTO for external consumers.
     pub fn to_dto(&self) -> CoreErrorDto {
         match self {
             CoreError::InvalidInput(msg) => CoreErrorDto {
-                code: "INVALID_INPUT".into(),
+                code: "INVALID_INPUT".to_string(),
                 message: format!("invalid input: {msg}"),
                 recoverable: true,
-                suggested_action: "Check input".into(),
+                suggested_action: "Check input".to_string(),
             },
             CoreError::NotFound(msg) => CoreErrorDto {
-                code: "NOT_FOUND".into(),
+                code: "NOT_FOUND".to_string(),
                 message: format!("not found: {msg}"),
                 recoverable: true,
-                suggested_action: "Check item exists".into(),
+                suggested_action: "Check item exists".to_string(),
             },
             CoreError::Internal(msg) => CoreErrorDto {
-                code: "INTERNAL_ERROR".into(),
+                code: "INTERNAL_ERROR".to_string(),
                 message: format!("internal error: {msg}"),
                 recoverable: false,
-                suggested_action: "Contact support".into(),
+                suggested_action: "Contact support".to_string(),
             },
             CoreError::Storage(msg) => CoreErrorDto {
-                code: "STORAGE_ERROR".into(),
+                code: "STORAGE_ERROR".to_string(),
                 message: format!("storage error: {msg}"),
                 recoverable: false,
-                suggested_action: "Retry or check disk".into(),
+                suggested_action: "Retry or check disk".to_string(),
             },
         }
     }
 }
-
-pub type CoreResult<T> = Result<T, CoreError>;
 
 #[cfg(test)]
 mod tests {
@@ -91,29 +89,37 @@ mod tests {
 
     #[test]
     fn core_error_to_dto_invalid_input() {
-        let dto = CoreError::InvalidInput("bad".into()).to_dto();
+        let err = CoreError::InvalidInput("bad".into());
+        let dto = err.to_dto();
         assert_eq!(dto.code, "INVALID_INPUT");
         assert!(dto.recoverable);
+        assert_eq!(dto.suggested_action, "Check input");
     }
 
     #[test]
     fn core_error_to_dto_not_found() {
-        let dto = CoreError::NotFound("missing".into()).to_dto();
+        let err = CoreError::NotFound("missing".into());
+        let dto = err.to_dto();
         assert_eq!(dto.code, "NOT_FOUND");
         assert!(dto.recoverable);
+        assert_eq!(dto.suggested_action, "Check item exists");
     }
 
     #[test]
     fn core_error_to_dto_internal() {
-        let dto = CoreError::Internal("oops".into()).to_dto();
+        let err = CoreError::Internal("oops".into());
+        let dto = err.to_dto();
         assert_eq!(dto.code, "INTERNAL_ERROR");
         assert!(!dto.recoverable);
+        assert_eq!(dto.suggested_action, "Contact support");
     }
 
     #[test]
     fn core_error_to_dto_storage() {
-        let dto = CoreError::Storage("disk".into()).to_dto();
+        let err = CoreError::Storage("disk full".into());
+        let dto = err.to_dto();
         assert_eq!(dto.code, "STORAGE_ERROR");
         assert!(!dto.recoverable);
+        assert_eq!(dto.suggested_action, "Retry or check disk");
     }
 }

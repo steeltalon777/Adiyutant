@@ -9,6 +9,10 @@ impl AdiyutantDateTime {
         Self(Utc::now())
     }
 
+    pub fn from_utc(dt: DateTime<Utc>) -> Self {
+        Self(dt)
+    }
+
     pub fn inner(&self) -> DateTime<Utc> {
         self.0
     }

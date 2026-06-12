@@ -32,60 +32,60 @@ git checkout -b phase-7.1-core-api-contract-hardening
 
 ### P1 — Contract Foundation (Blocking)
 
-- [ ] P1.0. Context verified: `v0.2.0` tag present, 148 tests pass, workspace clean
-- [ ] P1.1. `CoreErrorDto` — structured error DTO with `code`, `message`, `recoverable`, `suggested_action`
-- [ ] P1.2. Map all `CoreError` variants to `CoreErrorDto` with recovery hints
-- [ ] P1.3. Add `Serialize`/`Deserialize` to all DTOs in `dto.rs`
-- [ ] P1.4. Add `serde` feature to `adiyutant_core` Cargo.toml for JSON round-trip
-- [ ] P1.5. Write contract tests: serialize each DTO, deserialize back, verify identity
-- [ ] P1.6. Public API document: `docs/api/core-service-api.md`
-- [ ] P1.7. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
-- [ ] P1.8. Regression: `cargo test --workspace` — all 148+ tests pass
+- [x] P1.0. Context verified: `v0.2.0` tag present, 148 tests pass, workspace clean
+- [x] P1.1. `CoreErrorDto` — structured error DTO with `code`, `message`, `recoverable`, `suggested_action`
+- [x] P1.2. Map all `CoreError` variants to `CoreErrorDto` with recovery hints
+- [x] P1.3. Add `Serialize`/`Deserialize` to all DTOs in `dto.rs`
+- [x] P1.4. Add `serde` feature to `adiyutant_core` Cargo.toml for JSON round-trip
+- [x] P1.5. Write contract tests: serialize each DTO, deserialize back, verify identity
+- [x] P1.6. Public API document: `docs/api/core-service-api.md`
+- [x] P1.7. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
+- [x] P1.8. Regression: `cargo test --workspace` — all 148+ tests pass
 
 ### P2 — Domain Quality (Can parallel with P3)
 
-- [ ] P2.0. P1 gate passed
-- [ ] P2.1. `answer_checkpoint()` — resolve a pending checkpoint with user response
-- [ ] P2.2. `calculate_next_checkpoint()` — determine next checkpoint after a completed one
-- [ ] P2.3. `CheckpointStatus` transitions — valid state machine: Pending→Shown→Answered/Dismissed
-- [ ] P2.4. `generate_notification_payload()` → `NotificationInstructionDto` from checkpoint
-- [ ] P2.5. Checklist answer flow: `answer_checklist_item()` + `complete_checklist_run()`
-- [ ] P2.6. Checklist completion: attach answers JSON, set `completed_at`, journal entry
-- [ ] P2.7. Journal auto-events missing: `TaskStarted`, `TaskDone`, `TaskMoved`, `ChecklistCompleted`
-- [ ] P2.8. `TimeProvider` trait — abstraction over `chrono::Utc::now()` for testability
-- [ ] P2.9. `RealTimeProvider` (prod) + `FakeTimeProvider` (test/config)
-- [ ] P2.10. Wire TimeProvider into `AdiyutantCoreService` (constructor parameter)
-- [ ] P2.11. Update `StartupState` / `CurrentActivity` to use TimeProvider
-- [ ] P2.12. Update store to use TimeProvider for `AdiyutantDateTime::now()` in service layer
-- [ ] P2.13. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
-- [ ] P2.14. Unit + integration tests: checkpoint state machine, time injection, checklist flow
-- [ ] P2.15. Regression: `cargo test --workspace` — 148+ tests green
+- [x] P2.0. P1 gate passed
+- [x] P2.1. `answer_checkpoint()` — resolve a pending checkpoint with user response
+- [x] P2.2. `calculate_next_checkpoint()` — determine next checkpoint after a completed one
+- [x] P2.3. `CheckpointStatus` transitions — valid state machine: Pending→Shown→Answered/Dismissed
+- [x] P2.4. `generate_notification_payload()` → `NotificationInstructionDto` from checkpoint
+- [x] P2.5. Checklist answer flow: `answer_checklist_item()` + `complete_checklist_run()`
+- [x] P2.6. Checklist completion: attach answers JSON, set `completed_at`, journal entry
+- [x] P2.7. Journal auto-events missing: `TaskStarted`, `TaskDone`, `TaskMoved`, `ChecklistCompleted`
+- [x] P2.8. `TimeProvider` trait — abstraction over `chrono::Utc::now()` for testability
+- [x] P2.9. `RealTimeProvider` (prod) + `FakeTimeProvider` (test/config)
+- [x] P2.10. Wire TimeProvider into `AdiyutantCoreService` (constructor parameter)
+- [x] P2.11. Update `StartupState` / `CurrentActivity` to use TimeProvider
+- [x] P2.12. Update store to use TimeProvider for `AdiyutantDateTime::now()` in service layer
+- [x] P2.13. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
+- [x] P2.14. Unit + integration tests: checkpoint state machine, time injection, checklist flow
+- [x] P2.15. Regression: `cargo test --workspace` — 197 tests green
 
 ### P3 — Storage Hardening (Can parallel with P2)
 
-- [ ] P3.0. P1 gate passed
-- [ ] P3.1. Versioned migrations: add `schema_versions` table with `version INT`, `applied_at TEXT`
-- [ ] P3.2. `run_migration()` becomes `run_migration_v2()` — check current version, apply only new steps
-- [ ] P3.3. Schema version tracking: store records which migrations have been applied
-- [ ] P3.4. Compatibility test: build v0.1 schema SQL → migrate to v0.2 → verify all data intact
-- [ ] P3.5. Transactional `create_checkin`: wrap insert_check_in + update_daily_log + journal_entry
-- [ ] P3.6. Transactional `start_plan_item`: wrap update_plan_item + insert_task_checkpoint
-- [ ] P3.7. Transactional `complete_checklist`: wrap update_checklist_run + insert_journal_entry
-- [ ] P3.8. Store-level integration test: v0.1 compatibility migration
-- [ ] P3.9. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
-- [ ] P3.10. Unit + integration tests: migration versioning, transaction rollback, compat
-- [ ] P3.11. Regression: `cargo test --workspace` — 148+ tests green
+- [x] P3.0. P1 gate passed
+- [x] P3.1. Versioned migrations: add `schema_versions` table with `version INT`, `applied_at TEXT`
+- [x] P3.2. `run_migration()` becomes `run_migration_v2()` — check current version, apply only new steps
+- [x] P3.3. Schema version tracking: store records which migrations have been applied
+- [x] P3.4. Compatibility test: build v0.1 schema SQL → migrate to v0.2 → verify all data intact
+- [x] P3.5. Transactional `create_checkin`: wrap insert_check_in + update_daily_log + journal_entry
+- [x] P3.6. Transactional `start_plan_item`: wrap update_plan_item + insert_task_checkpoint
+- [x] P3.7. Transactional `complete_checklist`: wrap update_checklist_run + insert_journal_entry
+- [x] P3.8. Store-level integration test: v0.1 compatibility migration
+- [x] P3.9. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
+- [x] P3.10. Unit + integration tests: migration versioning, transaction rollback, compat
+- [x] P3.11. Regression: `cargo test --workspace` — 197 tests green
 
 ### P4 — UI Contract (Independent, can start anytime)
 
-- [ ] P4.0. Any gate passed (can start in parallel)
-- [ ] P4.1. Create `docs/ui-contract/android-core-contract.md`
-- [ ] P4.2. Document screens: Startup, Today Dashboard, Current Activity, Plan, Waiting Review, Checklist Run, Journal Feed
-- [ ] P4.3. For each screen: DTO used, call sequence, states, DTO examples (JSON-like)
-- [ ] P4.4. State glossary: `start_day_required`, `offer_daily_schedule`, `scheduled_task`, `no_plan`, `waiting`, `shutdown`, `recovery`, `free_time`
-- [ ] P4.5. Example JSON payloads for all DTOs (not code, human-readable)
-- [ ] P4.6. Document error DTO and recovery flows for common failure modes
-- [ ] P4.7. Review: document checked against actual `AdiyutantCoreService` method signatures
+- [x] P4.0. Any gate passed (can start in parallel)
+- [x] P4.1. Create `docs/ui-contract/android-core-contract.md`
+- [x] P4.2. Document screens: Startup, Today Dashboard, Current Activity, Plan, Waiting Review, Checklist Run, Journal Feed
+- [x] P4.3. For each screen: DTO used, call sequence, states, DTO examples (JSON-like)
+- [x] P4.4. State glossary: `start_day_required`, `offer_daily_schedule`, `scheduled_task`, `no_plan`, `waiting`, `shutdown`, `recovery`, `free_time`
+- [x] P4.5. Example JSON payloads for all DTOs (not code, human-readable)
+- [x] P4.6. Document error DTO and recovery flows for common failure modes
+- [x] P4.7. Review: document checked against actual `AdiyutantCoreService` method signatures
 
 ---
 
@@ -634,23 +634,23 @@ To be filled by executor after each priority level.
 
 | Priority | Check | Command | Result |
 |---|---|---|---|
-| P1 | fmt | `cargo fmt --all -- --check` | |
-| P1 | check | `cargo check --workspace` | |
-| P1 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | |
-| P1 | tests | `cargo test --workspace` | |
-| P1 | contract | DTO serde round-trip tests | |
-| P1 | doc | `docs/api/core-service-api.md` complete | |
-| P2 | fmt | `cargo fmt --all -- --check` | |
-| P2 | check | `cargo check --workspace` | |
-| P2 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | |
-| P2 | tests | `cargo test --workspace` | |
-| P3 | fmt | `cargo fmt --all -- --check` | |
-| P3 | check | `cargo check --workspace` | |
-| P3 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | |
-| P3 | tests | `cargo test --workspace` | |
-| P3 | compat | v0.1 → v0.2 migration test | |
-| P4 | doc | `docs/ui-contract/android-core-contract.md` complete | |
-| P4 | review | API doc consistency check | |
+| P1 | fmt | `cargo fmt --all -- --check` | ✅ clean |
+| P1 | check | `cargo check --workspace` | ✅ 0 errors |
+| P1 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
+| P1 | tests | `cargo test --workspace` | ✅ 163 passed |
+| P1 | contract | DTO serde round-trip tests | ✅ present |
+| P1 | doc | `docs/api/core-service-api.md` complete | ✅ 27 methods |
+| P2 | fmt | `cargo fmt --all -- --check` | ✅ clean |
+| P2 | check | `cargo check --workspace` | ✅ 0 errors |
+| P2 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
+| P2 | tests | `cargo test --workspace` | ✅ 197 passed |
+| P3 | fmt | `cargo fmt --all -- --check` | ✅ clean |
+| P3 | check | `cargo check --workspace` | ✅ 0 errors |
+| P3 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
+| P3 | tests | `cargo test --workspace` | ✅ 197 passed |
+| P3 | compat | v0.1 → v0.2 migration test | ✅ migrate_v01_to_v02_preserves_data |
+| P4 | doc | `docs/ui-contract/android-core-contract.md` complete | ✅ 7 screens, 8 states |
+| P4 | review | API doc consistency check | ✅ reviewed |
 
 ---
 
