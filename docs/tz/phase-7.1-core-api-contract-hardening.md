@@ -633,24 +633,26 @@ Migration compatibility test uses in-memory SQLite with manual schema creation.
 To be filled by executor after each priority level.
 
 | Priority | Check | Command | Result |
-|---|---|---|---|
+|---|---|---|---|---|
 | P1 | fmt | `cargo fmt --all -- --check` | ✅ clean |
 | P1 | check | `cargo check --workspace` | ✅ 0 errors |
 | P1 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
-| P1 | tests | `cargo test --workspace` | ✅ 163 passed |
-| P1 | contract | DTO serde round-trip tests | ✅ present |
+| P1 | tests | `cargo test --workspace` | ✅ 183 passed |
+| P1 | contract | DTO serde round-trip tests | ✅ 11 tests present |
 | P1 | doc | `docs/api/core-service-api.md` complete | ✅ 27 methods |
 | P2 | fmt | `cargo fmt --all -- --check` | ✅ clean |
 | P2 | check | `cargo check --workspace` | ✅ 0 errors |
 | P2 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
-| P2 | tests | `cargo test --workspace` | ✅ 197 passed |
+| P2 | tests | `cargo test --workspace` | ✅ 183 passed |
+| P2 | domain | TimeProvider, checkpoint, checklist, journal events | ✅ 16 new tests |
 | P3 | fmt | `cargo fmt --all -- --check` | ✅ clean |
 | P3 | check | `cargo check --workspace` | ✅ 0 errors |
 | P3 | clippy | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warnings |
-| P3 | tests | `cargo test --workspace` | ✅ 197 passed |
+| P3 | tests | `cargo test --workspace` | ✅ 183 passed |
 | P3 | compat | v0.1 → v0.2 migration test | ✅ migrate_v01_to_v02_preserves_data |
+| P3 | transaction | rollback test | ✅ transaction_rollback_on_error |
 | P4 | doc | `docs/ui-contract/android-core-contract.md` complete | ✅ 7 screens, 8 states |
-| P4 | review | API doc consistency check | ✅ reviewed |
+| P4 | review | API doc consistency check | ✅ reviewed vs service.rs |
 
 ---
 
