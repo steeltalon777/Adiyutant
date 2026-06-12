@@ -37,10 +37,16 @@ pub fn build_facade(store: SqliteStore) -> AdiyutantCoreService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
+    use std::sync::Mutex;
+
+    /// Serializes tests that modify the shared `ADIYUTANT_DB_PATH` env var.
+    static DB_PATH_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn db_path_uses_env_var() {
-        // SAFETY: test-only env var modification
+        let _guard = DB_PATH_LOCK.lock().unwrap();
+        // SAFETY: test-only env var modification, serialized via mutex
         unsafe {
             std::env::set_var("ADIYUTANT_DB_PATH", "/tmp/test.db");
         }
@@ -54,7 +60,8 @@ mod tests {
 
     #[test]
     fn db_path_falls_back_to_home() {
-        // SAFETY: test-only env var removal
+        let _guard = DB_PATH_LOCK.lock().unwrap();
+        // SAFETY: test-only env var removal, serialized via mutex
         unsafe {
             std::env::remove_var("ADIYUTANT_DB_PATH");
         }

@@ -180,11 +180,12 @@ Applies the review decision to a waiting plan item.
 | `response` | `&str` | User response text |
 
 - **Returns:** `PlanItemDto`
-- **Errors:** `INVALID_INPUT` (bad UUID, already answered), `NOT_FOUND`, `STORAGE_ERROR`
+- **Errors:** `INVALID_INPUT` (bad UUID, unknown response, already answered/dismissed), `NOT_FOUND`, `STORAGE_ERROR`
 - **Stable:** yes
 
-Answers a pending checkpoint and transitions its status through the state
-machine: `Pending → Shown → Answered`.
+Answers a checkpoint with user response. Transitions `Pending/Shown → Answered`.
+Auto-creates the next checkpoint in the sequence (e.g. StartCheck→ProgressCheck).
+Creates a `NudgeAnswered` journal entry.
 
 ### `get_pending_checkpoint_notification()`
 

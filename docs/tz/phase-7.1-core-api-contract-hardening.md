@@ -59,7 +59,7 @@ git checkout -b phase-7.1-core-api-contract-hardening
 - [x] P2.12. Update store to use TimeProvider for `AdiyutantDateTime::now()` in service layer
 - [x] P2.13. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
 - [x] P2.14. Unit + integration tests: checkpoint state machine, time injection, checklist flow
-- [x] P2.15. Regression: `cargo test --workspace` — 197 tests green
+- [x] P2.15. Regression: `cargo test --workspace` — 183 tests passed
 
 ### P3 — Storage Hardening (Can parallel with P2)
 
@@ -74,7 +74,7 @@ git checkout -b phase-7.1-core-api-contract-hardening
 - [x] P3.8. Store-level integration test: v0.1 compatibility migration
 - [x] P3.9. Static checks: `fmt`, `check`, `clippy --all-targets -D warnings`
 - [x] P3.10. Unit + integration tests: migration versioning, transaction rollback, compat
-- [x] P3.11. Regression: `cargo test --workspace` — 197 tests green
+- [x] P3.11. Regression: `cargo test --workspace` — 183 tests passed
 
 ### P4 — UI Contract (Independent, can start anytime)
 
