@@ -530,7 +530,7 @@ Migration compatibility test uses in-memory SQLite with manual schema creation.
 - `cargo fmt --all -- --check` — clean
 - `cargo check --workspace` — 0 errors
 - `cargo clippy --workspace --all-targets -- -D warnings` — 0 warnings
-- `cargo test --workspace` — all tests pass (≥ 148)
+- `cargo test --workspace` — all tests pass (≥ 183)
 
 ### P1 gate (must pass before P2/P3 start)
 

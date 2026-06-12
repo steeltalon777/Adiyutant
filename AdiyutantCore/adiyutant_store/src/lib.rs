@@ -1710,6 +1710,141 @@ impl Store for SqliteStore {
         }
         Ok(())
     }
+
+    fn insert_checkin_composite(
+        &self,
+        ci: &CheckIn,
+        daily_log_update: Option<&DailyLog>,
+        journal: &JournalEntry,
+    ) -> Result<(), CoreError> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = self
+            .insert_check_in(ci)
+            .and_then(|()| {
+                if let Some(log) = daily_log_update {
+                    self.update_daily_log(log)
+                } else {
+                    Ok(())
+                }
+            })
+            .and_then(|()| self.insert_journal_entry(journal));
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
+    fn start_plan_item_composite(
+        &self,
+        item: &PlanItem,
+        checkpoint: &TaskCheckpoint,
+        journal: &JournalEntry,
+    ) -> Result<(), CoreError> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = self
+            .update_plan_item(item)
+            .and_then(|()| self.insert_task_checkpoint(checkpoint))
+            .and_then(|()| self.insert_journal_entry(journal));
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
+    fn done_plan_item_composite(
+        &self,
+        item: &PlanItem,
+        journal: &JournalEntry,
+    ) -> Result<(), CoreError> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = self
+            .update_plan_item(item)
+            .and_then(|()| self.insert_journal_entry(journal));
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
+    fn move_to_waiting_composite(
+        &self,
+        item: &PlanItem,
+        journal: &JournalEntry,
+    ) -> Result<(), CoreError> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = self
+            .update_plan_item(item)
+            .and_then(|()| self.insert_journal_entry(journal));
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
+    fn complete_checklist_composite(
+        &self,
+        run: &ChecklistRun,
+        journal: &JournalEntry,
+    ) -> Result<(), CoreError> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = self
+            .update_checklist_run(run)
+            .and_then(|()| self.insert_journal_entry(journal));
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -2281,6 +2416,57 @@ impl Store for NoopStore {
     }
     fn delete_journal_entry(&self, _id: Id<JournalEntry>) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    fn insert_checkin_composite(
+        &self,
+        ci: &CheckIn,
+        daily_log_update: Option<&DailyLog>,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error> {
+        self.insert_check_in(ci)?;
+        if let Some(log) = daily_log_update {
+            self.update_daily_log(log)?;
+        }
+        self.insert_journal_entry(journal)
+    }
+
+    fn start_plan_item_composite(
+        &self,
+        item: &PlanItem,
+        checkpoint: &TaskCheckpoint,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error> {
+        self.update_plan_item(item)?;
+        self.insert_task_checkpoint(checkpoint)?;
+        self.insert_journal_entry(journal)
+    }
+
+    fn done_plan_item_composite(
+        &self,
+        item: &PlanItem,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error> {
+        self.update_plan_item(item)?;
+        self.insert_journal_entry(journal)
+    }
+
+    fn move_to_waiting_composite(
+        &self,
+        item: &PlanItem,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error> {
+        self.update_plan_item(item)?;
+        self.insert_journal_entry(journal)
+    }
+
+    fn complete_checklist_composite(
+        &self,
+        run: &ChecklistRun,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error> {
+        self.update_checklist_run(run)?;
+        self.insert_journal_entry(journal)
     }
 }
 

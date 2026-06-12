@@ -176,4 +176,38 @@ pub trait Store {
     ) -> Result<Vec<JournalEntry>, Self::Error>;
     fn update_journal_entry(&self, entry: &JournalEntry) -> Result<(), Self::Error>;
     fn delete_journal_entry(&self, id: Id<JournalEntry>) -> Result<(), Self::Error>;
+
+    // ── Composite (transactional) operations ──
+    /// Create a check-in with optional daily-log update and journal entry (atomic).
+    fn insert_checkin_composite(
+        &self,
+        ci: &CheckIn,
+        daily_log_update: Option<&DailyLog>,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error>;
+    /// Start a plan item: update status, insert checkpoint, create journal entry (atomic).
+    fn start_plan_item_composite(
+        &self,
+        item: &PlanItem,
+        checkpoint: &TaskCheckpoint,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error>;
+    /// Complete a plan item: update status, create journal entry (atomic).
+    fn done_plan_item_composite(
+        &self,
+        item: &PlanItem,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error>;
+    /// Move to waiting: update status, create journal entry (atomic).
+    fn move_to_waiting_composite(
+        &self,
+        item: &PlanItem,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error>;
+    /// Complete a checklist run: update run + insert journal entry (atomic).
+    fn complete_checklist_composite(
+        &self,
+        run: &ChecklistRun,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error>;
 }

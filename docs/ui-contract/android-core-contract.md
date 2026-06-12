@@ -1,4 +1,4 @@
-# Android-Core UI Contract — v0.2.0
+# Android-Core UI Contract — v0.3.0
 
 > Defines the binding between Android screens and `AdiyutantCoreService`.
 > Every screen maps to exactly one primary DTO and a fixed call sequence.
@@ -317,8 +317,8 @@
 ```
 1. service.list_checklist_templates()         → show available checklists
 2. service.run_checklist("morning")           → start a run
-3. (future P2: answer_checklist_item() × N)
-4. (future P2: complete_checklist_run())
+3. service.answer_checklist_item(run_id, item_id, value, comment?) × N
+4. service.complete_checklist_run(run_id)
 ```
 
 ### States
@@ -400,11 +400,11 @@
 | `entry_type` value | Source | Auto-generated? |
 |---|---|---|
 | `CheckInCreated` | `create_checkin()` | Yes |
-| `TaskStarted` | `start_plan_item()` | Yes (future P2) |
-| `TaskDone` | `done_plan_item()` | Yes (future P2) |
-| `TaskMoved` | `move_to_waiting()` | Yes (future P2) |
-| `ChecklistCompleted` | `complete_checklist_run()` | Yes (future P2) |
-| `NudgeAnswered` | (future P2: checkpoint answer) | Yes |
+| `TaskStarted` | `start_plan_item()` | Yes |
+| `TaskDone` | `done_plan_item()` | Yes |
+| `TaskMoved` | `move_to_waiting()` | Yes |
+| `ChecklistCompleted` | `complete_checklist_run()` | Yes |
+| `NudgeAnswered` | `answer_checkpoint()` (via checkpoint flow) | Yes |
 | `Note` | `add_journal_entry()` or manual | Manual |
 | `Shutdown` | (future: shutdown flow) | Yes |
 
@@ -619,3 +619,12 @@ Common triggers:
 4. **Method signature changes** — breaking change (requires version bump).
 5. **New `intent` / `activity_kind` values** — backward compatible (Android must handle unknown values gracefully with a fallback UI).
 6. **New `entry_type` values** — backward compatible (Android must render unknown types as generic entries).
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| v0.3.0 | 2026-06 | Updated for Phase 7.1: checkpoint flow, checklist answer/complete, journal auto-events, TimeProvider |
+| v0.2.0 | 2026-06 | Initial UI contract document |

@@ -275,17 +275,16 @@ impl AdiyutantCoreService {
         item.status = PlanItemStatus::Started;
         item.updated_at = AdiyutantDateTime::from_utc(self.time.now_utc());
 
-        // Create ProgressCheck checkpoint
         let cp = TaskCheckpoint::new(item.id, CheckpointKind::ProgressCheck);
-        let _ = self.store.insert_task_checkpoint(&cp);
-
-        self.store.update_plan_item(&item)?;
         let entry = JournalEntry::new(
             item.daily_log_id,
             JournalEntryType::TaskStarted,
             format!("Started: {}", item.title),
         );
-        let _ = self.store.insert_journal_entry(&entry);
+
+        // Atomic: update_plan_item + insert_task_checkpoint + insert_journal_entry
+        self.store
+            .start_plan_item_composite(&item, &cp, &entry)?;
         Ok(plan_item_to_dto(&item))
     }
 
@@ -300,13 +299,14 @@ impl AdiyutantCoreService {
         item.status = PlanItemStatus::Done;
         item.updated_at = AdiyutantDateTime::from_utc(self.time.now_utc());
 
-        self.store.update_plan_item(&item)?;
         let entry = JournalEntry::new(
             item.daily_log_id,
             JournalEntryType::TaskDone,
             format!("Done: {}", item.title),
         );
-        let _ = self.store.insert_journal_entry(&entry);
+
+        // Atomic: update_plan_item + insert_journal_entry
+        self.store.done_plan_item_composite(&item, &entry)?;
         Ok(plan_item_to_dto(&item))
     }
 
@@ -327,13 +327,14 @@ impl AdiyutantCoreService {
             Some(self.time.today() + chrono::Duration::days(review_days.unwrap_or(7) as i64));
         item.updated_at = AdiyutantDateTime::from_utc(self.time.now_utc());
 
-        self.store.update_plan_item(&item)?;
         let entry = JournalEntry::new(
             item.daily_log_id,
             JournalEntryType::TaskMoved,
             format!("Moved to waiting: {}", item.title),
         );
-        let _ = self.store.insert_journal_entry(&entry);
+
+        // Atomic: update_plan_item + insert_journal_entry
+        self.store.move_to_waiting_composite(&item, &entry)?;
         Ok(plan_item_to_dto(&item))
     }
 
@@ -407,6 +408,8 @@ impl AdiyutantCoreService {
 
     // ── Checkpoint Domain ──────────────────────
 
+    /// Answer a checkpoint: transition Pending or Shown → Answered with response.
+    /// Auto-creates the next checkpoint in the sequence via `calculate_next_checkpoint`.
     pub fn answer_checkpoint(
         &self,
         checkpoint_id: &str,
@@ -418,15 +421,14 @@ impl AdiyutantCoreService {
             .get_task_checkpoint(id)?
             .ok_or_else(|| CoreError::NotFound(format!("checkpoint {checkpoint_id}")))?;
 
+        let resp = CheckpointResponse::from_str(response).ok_or_else(|| {
+            CoreError::InvalidInput(format!("unknown response: {response}"))
+        })?;
+
         match cp.status {
-            CheckpointStatus::Pending => {
-                cp.status = CheckpointStatus::Shown;
-            }
-            CheckpointStatus::Shown => {
+            CheckpointStatus::Pending | CheckpointStatus::Shown => {
                 cp.status = CheckpointStatus::Answered;
-                cp.response = Some(CheckpointResponse::from_str(response).ok_or_else(|| {
-                    CoreError::InvalidInput(format!("unknown response: {response}"))
-                })?);
+                cp.response = Some(resp);
                 cp.answered_at = Some(AdiyutantDateTime::from_utc(self.time.now_utc()));
             }
             CheckpointStatus::Answered | CheckpointStatus::Dismissed => {
@@ -442,10 +444,39 @@ impl AdiyutantCoreService {
             .store
             .get_plan_item(cp.plan_item_id)?
             .ok_or_else(|| CoreError::NotFound("plan_item for checkpoint".into()))?;
+
+        // Auto-create next checkpoint in the sequence
+        if let Some(next_kind) = Self::calculate_next_checkpoint(&item, &cp.kind, &resp) {
+            let next_cp = TaskCheckpoint::new(item.id, next_kind);
+            let _ = self.store.insert_task_checkpoint(&next_cp);
+        }
+
         Ok(plan_item_to_dto(&item))
     }
 
-    #[allow(dead_code)]
+    /// Dismiss a checkpoint: transition Pending or Shown → Dismissed.
+    pub fn dismiss_checkpoint(&self, checkpoint_id: &str) -> Result<(), CoreError> {
+        let id = parse_id::<TaskCheckpoint>(checkpoint_id)?;
+        let mut cp = self
+            .store
+            .get_task_checkpoint(id)?
+            .ok_or_else(|| CoreError::NotFound(format!("checkpoint {checkpoint_id}")))?;
+
+        match cp.status {
+            CheckpointStatus::Pending | CheckpointStatus::Shown => {
+                cp.status = CheckpointStatus::Dismissed;
+            }
+            CheckpointStatus::Answered | CheckpointStatus::Dismissed => {
+                return Err(CoreError::InvalidInput(
+                    "checkpoint already answered or dismissed".into(),
+                ));
+            }
+        }
+
+        self.store.update_task_checkpoint(&cp)
+    }
+
+    /// Determine the next checkpoint kind after answering one.
     fn calculate_next_checkpoint(
         _plan_item: &PlanItem,
         last_kind: &CheckpointKind,
@@ -649,7 +680,7 @@ impl AdiyutantCoreService {
         })
     }
 
-    /// Complete a checklist run.
+    /// Complete a checklist run (transactional: update_run + journal entry).
     pub fn complete_checklist_run(&self, run_id: &str) -> Result<ChecklistRunDto, CoreError> {
         let uuid = parse_id::<ChecklistRun>(run_id)?;
         let mut run = self
@@ -664,25 +695,27 @@ impl AdiyutantCoreService {
         }
 
         run.completed_at = Some(AdiyutantDateTime::from_utc(self.time.now_utc()));
-        self.store.update_checklist_run(&run)?;
 
-        // Journal auto-event: ChecklistCompleted
         let entry = JournalEntry::new(
             run.daily_log_id,
             JournalEntryType::ChecklistCompleted,
             format!("Checklist completed: {}", run.id.value()),
         );
-        let _ = self.store.insert_journal_entry(&entry);
 
-        let template = self
+        // Atomic: update_checklist_run + insert_journal_entry
+        self.store.complete_checklist_composite(&run, &entry)?;
+
+        let template_title = self
             .store
             .get_checklist_template(run.template_id)
             .ok()
-            .and_then(|t| t);
+            .and_then(|t| t)
+            .map(|t| t.title)
+            .unwrap_or_default();
 
         Ok(ChecklistRunDto {
             id: run.id.value().to_string(),
-            template_title: template.map(|t| t.title).unwrap_or_default(),
+            template_title,
             started_at: run.started_at.inner().to_rfc3339(),
             completed_at: run
                 .completed_at
@@ -734,7 +767,7 @@ impl AdiyutantCoreService {
 
     // ── Check-In ───────────────────────────────
 
-    /// Create a check-in and optionally update daily log metrics.
+    /// Create a check-in and optionally update daily log metrics (transactional).
     pub fn create_checkin(
         &self,
         checkin_type: &str,
@@ -757,32 +790,29 @@ impl AdiyutantCoreService {
             }
         };
         let ci = CheckIn::new(daily_log_id, ci_type, text.to_string());
-        self.store.insert_check_in(&ci)?;
 
-        if (sleep_score.is_some() || energy.is_some() || mood.is_some())
-            && let Some(log) = self.store.get_daily_log(daily_log_id)?
-        {
-            let mut updated = log.clone();
-            if let Some(s) = sleep_score {
-                updated.sleep_score = Some(s);
-            }
-            if let Some(e) = energy {
-                updated.energy = Some(e);
-            }
-            if let Some(m) = mood {
-                updated.mood = Some(m);
-            }
-            self.store.update_daily_log(&updated)?;
-        }
+        // Build optional daily log update
+        let daily_log_update = if sleep_score.is_some() || energy.is_some() || mood.is_some() {
+            self.store.get_daily_log(daily_log_id)?
+                .map(|mut log| {
+                    if let Some(s) = sleep_score { log.sleep_score = Some(s); }
+                    if let Some(e) = energy { log.energy = Some(e); }
+                    if let Some(m) = mood { log.mood = Some(m); }
+                    log
+                })
+        } else {
+            None
+        };
 
-        // Auto-journal entry
         let entry = JournalEntry::new(
             daily_log_id,
             JournalEntryType::CheckInCreated,
             format!("{checkin_type} check-in: {text}"),
         );
-        let _ = self.store.insert_journal_entry(&entry);
 
+        // Atomic: insert_check_in + update_daily_log + insert_journal_entry
+        self.store
+            .insert_checkin_composite(&ci, daily_log_update.as_ref(), &entry)?;
         Ok(ci.id.value().to_string())
     }
 
@@ -1601,6 +1631,57 @@ mod tests {
                 .remove(&id.value().to_string());
             Ok(())
         }
+
+        fn insert_checkin_composite(
+            &self,
+            ci: &CheckIn,
+            daily_log_update: Option<&DailyLog>,
+            journal: &JournalEntry,
+        ) -> Result<(), Self::Error> {
+            self.insert_check_in(ci)?;
+            if let Some(log) = daily_log_update {
+                self.update_daily_log(log)?;
+            }
+            self.insert_journal_entry(journal)
+        }
+
+        fn start_plan_item_composite(
+            &self,
+            item: &PlanItem,
+            checkpoint: &TaskCheckpoint,
+            journal: &JournalEntry,
+        ) -> Result<(), Self::Error> {
+            self.update_plan_item(item)?;
+            self.insert_task_checkpoint(checkpoint)?;
+            self.insert_journal_entry(journal)
+        }
+
+        fn done_plan_item_composite(
+            &self,
+            item: &PlanItem,
+            journal: &JournalEntry,
+        ) -> Result<(), Self::Error> {
+            self.update_plan_item(item)?;
+            self.insert_journal_entry(journal)
+        }
+
+        fn move_to_waiting_composite(
+            &self,
+            item: &PlanItem,
+            journal: &JournalEntry,
+        ) -> Result<(), Self::Error> {
+            self.update_plan_item(item)?;
+            self.insert_journal_entry(journal)
+        }
+
+        fn complete_checklist_composite(
+            &self,
+            run: &ChecklistRun,
+            journal: &JournalEntry,
+        ) -> Result<(), Self::Error> {
+            self.update_checklist_run(run)?;
+            self.insert_journal_entry(journal)
+        }
     }
 
     // ── TimeProvider integration tests ──────────
@@ -1721,7 +1802,7 @@ mod tests {
         let time = FakeTimeProvider::new(2026, 6, 10, 10);
         let service = AdiyutantCoreService::with_time(Box::new(store), Box::new(time));
 
-        // First call: Pending → Shown
+        // First call: Pending → Answered (directly, with response)
         let result = service.answer_checkpoint(&cp_id, "Started").unwrap();
         assert_eq!(result.title, "test");
 
@@ -1730,23 +1811,12 @@ mod tests {
             .get_task_checkpoint(parse_id(&cp_id).unwrap())
             .unwrap()
             .unwrap();
-        assert_eq!(cp.status, CheckpointStatus::Shown);
-
-        // Second call: Shown → Answered
-        let result = service.answer_checkpoint(&cp_id, "Done").unwrap();
-        assert_eq!(result.title, "test");
-
-        let cp = service
-            .store
-            .get_task_checkpoint(parse_id(&cp_id).unwrap())
-            .unwrap()
-            .unwrap();
         assert_eq!(cp.status, CheckpointStatus::Answered);
-        assert_eq!(cp.response, Some(CheckpointResponse::Done));
+        assert_eq!(cp.response, Some(CheckpointResponse::Started));
         assert!(cp.answered_at.is_some());
 
-        // Third call: Answered → error
-        let err = service.answer_checkpoint(&cp_id, "Done").unwrap_err();
+        // Second call: Answered → error
+        let err = service.answer_checkpoint(&cp_id, "Started").unwrap_err();
         assert!(matches!(err, CoreError::InvalidInput(_)));
     }
 
