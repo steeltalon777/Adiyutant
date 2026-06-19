@@ -113,6 +113,8 @@ Goal: Synchronize documentation with v0.3.0 reality, fix ignored Store errors, c
 - [x] HabitDto, TimerDto, ReminderDto, AlarmDto, ContextDocumentDto, SuggestionDto
 - [x] All facade methods return DTOs (no tuples)
 
-### Slice 3: Service Facade Split & Contract Tests [ ] Planned
-- [ ] Split service.rs into submodules
-- [ ] Golden JSON contract snapshots
+### Slice 3: Service Facade Split & Contract Tests [x] Done
+- [x] Split service.rs into 10 submodules
+- [x] 7 golden JSON contract examples with deserialization tests
+
+**Phase 8 complete.** Core hardened for Android consumption.

@@ -1,0 +1,16 @@
+{
+  "template": {
+    "id": "770e8400-e29b-41d4-a716-446655440003",
+    "title": "Morning Check-in",
+    "category": "morning",
+    "item_count": 4,
+    "is_active": true
+  },
+  "run": {
+    "id": "880e8400-e29b-41d4-a716-446655440004",
+    "template_title": "Morning Check-in",
+    "started_at": "2026-06-19T07:00:00Z",
+    "completed_at": "2026-06-19T07:05:00Z",
+    "answer_count": 4
+  }
+}

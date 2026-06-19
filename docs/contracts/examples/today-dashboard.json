@@ -1,0 +1,31 @@
+{
+  "date": "2026-06-19",
+  "has_daily_log": true,
+  "mode": "focus",
+  "sleep_score": "7",
+  "energy": "6",
+  "mood": "8",
+  "check_in_count": 2,
+  "has_morning_check_in": true,
+  "has_evening_check_in": false,
+  "habit_count": 3,
+  "habit_events_done": 1,
+  "has_plan": true,
+  "plan_title": "Plan for 2026-06-19",
+  "plan_item_count": 3,
+  "plan_items": [
+    {
+      "description": "Write API docs",
+      "status": "Started",
+      "estimated_minutes": "",
+      "notes": "Phase 8.3"
+    },
+    {
+      "description": "Review PR",
+      "status": "Planned",
+      "estimated_minutes": "30",
+      "notes": ""
+    }
+  ],
+  "suggestion_count": 2
+}

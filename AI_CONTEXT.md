@@ -2,13 +2,14 @@
 
 ## Repository Status
 
-This repository is in **v0.3.0** state. Core implemented with service facade, DTO layer (20+ stable output models), planning domain, checkpoints, checklists, journal, 196 tests, 15 CLI commands, SQLite with 15 tables, 7 composite transactions.
+v0.4.0-ready. Core hardened: service facade split into 10 modules, DTO contract complete (20+ DTOs), 203 tests, golden JSON contract examples.
 
 ## Implemented
 
-- `AdiyutantCore/adiyutant_core` — 16 domain entities, 6 local rules, `TodayState` aggregator, `AdiyutantCoreService` facade (use-case boundary), `StartupState`/`CurrentActivity` with time-aware heuristics
+- `AdiyutantCore/adiyutant_core` — 16 domain entities, 6 local rules, `TodayState` aggregator, `AdiyutantCoreService` facade split into 10 modules (`today.rs`, `planning.rs`, `checkpoints.rs`, `checklists.rs`, `journal.rs`, `checkin.rs`, `basic_entities.rs`, `suggestions.rs`, `helpers.rs` + `mod.rs`)
 - `AdiyutantCore/adiyutant_store` — `SqliteStore` with 15 tables, versioned migrations, 7 composite transactions
 - `AdiyutantCore/adiyutant_cli` — 15 commands (`today`, `log`, `checkin`, `startup`, `current`, `checklist`, `plan`, `habit`, `timer`, `reminder`, `alarm`, `context`, `suggest`, `journal`, `waiting`)
+- `docs/contracts/examples/` — 7 golden JSON contract examples
 
 ## Not Yet Implemented
 

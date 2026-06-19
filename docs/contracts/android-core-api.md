@@ -81,3 +81,18 @@
 | get_pending_checkpoint_notification() | Option\<NotificationInstructionDto\> | Notifications |
 | answer_checkpoint(id, response) | PlanItemDto | Checkpoint modal |
 | dismiss_checkpoint(id) | Result\<(), CoreError\> | Checkpoint modal |
+
+## Contract Examples
+
+Golden JSON examples for each screen are available in `docs/contracts/examples/`.
+These represent stable DTO shapes guaranteed by the Core API.
+
+| Example file | Screen |
+|---|---|
+| `startup-state.json` | Startup Screen |
+| `today-dashboard.json` | Today Dashboard |
+| `current-activity.json` | Current Activity |
+| `plan-item-lifecycle.json` | Plan Screen (create → start → done) |
+| `waiting-review.json` | Waiting Review |
+| `checklist-run.json` | Checklist Run |
+| `journal-feed.json` | Journal Feed |

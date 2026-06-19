@@ -2,7 +2,7 @@
 
 ## Current
 
-TASK-0018 — Phase 8.3: Service Facade Split & Contract Tests
+None (Phase 8 hardening complete)
 
 ## Next
 
@@ -21,3 +21,4 @@ TASK-0018 — Phase 8.3: Service Facade Split & Contract Tests
 - [x] TASK-0008 — Core API Contract Hardening (Phase 7.1)
 - [x] TASK-0016 — Phase 8.1: Doc Sync & Error Fix
 - [x] TASK-0017 — Phase 8.2: DTO Contract Completion
+- [x] TASK-0018 — Phase 8.3: Service Facade Split & Contract Tests

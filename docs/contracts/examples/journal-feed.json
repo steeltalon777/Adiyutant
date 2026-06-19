@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "id": "990e8400-e29b-41d4-a716-446655440005",
+      "entry_type": "CheckInCreated",
+      "summary": "morning check-in: Feeling good today",
+      "timestamp": "2026-06-19T07:00:00Z"
+    },
+    {
+      "id": "990e8400-e29b-41d4-a716-446655440006",
+      "entry_type": "TaskStarted",
+      "summary": "Started: Write API docs",
+      "timestamp": "2026-06-19T09:00:00Z"
+    },
+    {
+      "id": "990e8400-e29b-41d4-a716-446655440007",
+      "entry_type": "Note",
+      "summary": "Remember to call dentist",
+      "timestamp": "2026-06-19T12:30:00Z"
+    }
+  ]
+}

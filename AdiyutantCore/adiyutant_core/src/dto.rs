@@ -599,4 +599,94 @@ mod tests {
         assert_eq!(dto.reason, back.reason);
         assert_eq!(dto.suggestion, back.suggestion);
     }
+
+    // ── Golden JSON contract validation ──
+
+    #[test]
+    fn contract_example_startup_state_deserializable() {
+        let json = include_str!("../../../docs/contracts/examples/startup-state.json");
+        let dto: StartupViewDto = serde_json::from_str(json)
+            .expect("startup-state.json must deserialize into StartupViewDto");
+        assert!(!dto.intent.is_empty());
+        assert!(!dto.reason.is_empty());
+    }
+
+    #[test]
+    fn contract_example_today_dashboard_deserializable() {
+        let json = include_str!("../../../docs/contracts/examples/today-dashboard.json");
+        let dto: TodayViewDto = serde_json::from_str(json)
+            .expect("today-dashboard.json must deserialize into TodayViewDto");
+        assert!(!dto.date.is_empty());
+    }
+
+    #[test]
+    fn contract_example_current_activity_deserializable() {
+        let json = include_str!("../../../docs/contracts/examples/current-activity.json");
+        let dto: CurrentActivityDto = serde_json::from_str(json)
+            .expect("current-activity.json must deserialize into CurrentActivityDto");
+        assert!(!dto.activity_kind.is_empty());
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct PlanItemLifecycleWrapper {
+        lifecycle: Vec<LifecycleStage>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct LifecycleStage {
+        stage: String,
+        plan_item: PlanItemDto,
+    }
+
+    #[test]
+    fn contract_example_plan_item_lifecycle_deserializable() {
+        let json = include_str!("../../../docs/contracts/examples/plan-item-lifecycle.json");
+        let wrapper: PlanItemLifecycleWrapper =
+            serde_json::from_str(json).expect("plan-item-lifecycle.json must deserialize");
+        assert_eq!(wrapper.lifecycle.len(), 3);
+        assert_eq!(wrapper.lifecycle[0].stage, "created");
+        assert_eq!(wrapper.lifecycle[1].plan_item.status, "Started");
+        assert_eq!(wrapper.lifecycle[2].plan_item.status, "Done");
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct WaitingReviewWrapper {
+        waiting_tasks: Vec<WaitingTaskDto>,
+    }
+
+    #[test]
+    fn contract_example_waiting_review_deserializable() {
+        let json = include_str!("../../../docs/contracts/examples/waiting-review.json");
+        let wrapper: WaitingReviewWrapper =
+            serde_json::from_str(json).expect("waiting-review.json must deserialize");
+        assert!(!wrapper.waiting_tasks.is_empty());
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct ChecklistRunWrapper {
+        template: ChecklistTemplateDto,
+        run: ChecklistRunDto,
+    }
+
+    #[test]
+    fn contract_example_checklist_run_deserializable() {
+        let json = include_str!("../../../docs/contracts/examples/checklist-run.json");
+        let wrapper: ChecklistRunWrapper =
+            serde_json::from_str(json).expect("checklist-run.json must deserialize");
+        assert_eq!(wrapper.template.category, "morning");
+        assert_eq!(wrapper.run.answer_count, 4);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct JournalFeedWrapper {
+        entries: Vec<JournalEntryDto>,
+    }
+
+    #[test]
+    fn contract_example_journal_feed_deserializable() {
+        let json = include_str!("../../../docs/contracts/examples/journal-feed.json");
+        let wrapper: JournalFeedWrapper =
+            serde_json::from_str(json).expect("journal-feed.json must deserialize");
+        assert_eq!(wrapper.entries.len(), 3);
+        assert_eq!(wrapper.entries[0].entry_type, "CheckInCreated");
+    }
 }

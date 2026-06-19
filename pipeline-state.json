@@ -113,9 +113,19 @@
       "retries": 0,
       "max_retries": 3,
       "notes": "Completed. 8 new DTOs (Habit, HabitEvent, Timer, Reminder, Alarm, ContextDocument, CheckIn, Suggestion). 14 methods updated. 196 tests. No tuple/String returns in facade."
+    },
+    "Phase 8.3 — Service Facade Split & Contract Tests": {
+      "index": 11,
+      "status": "done",
+      "tz": "docs/tz/phase-8.3-service-facade-split-and-contract-tests.md",
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Completed. service.rs split into 10 submodules. 7 golden JSON contract examples. 203 tests. Tag candidate: v0.4.0."
     }
   },
-  "current_phase": "Phase 8.3 — Service Facade Split & Contract Tests",
+  "current_phase": null,
   "current_step": null,
   "started_at": "2026-06-08T03:22:00Z",
   "last_updated": "2026-06-19T07:56:28Z"
