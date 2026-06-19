@@ -72,11 +72,41 @@
       "review_verdict": "docs/reports/phase-6-review.md",
       "retries": 0,
       "max_retries": 3,
-      "notes": "PENDING RE-REVIEW. Fixed doc sync (README, SPECIFICATION, AI_CONTEXT, SOLUTION_MAP), TZ scenario aligned (plan create -> habit done)."
+      "notes": "Accepted. MVP 0.1 audit passed. Tag: v0.1.0."
+    },
+    "Phase 7 — Core Service Facade & Android Readiness": {
+      "index": 7,
+      "status": "done",
+      "tz": "docs/archive/phase-7-core-android-readiness.md",
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Accepted. Service facade, DTOs, DayPlan/PlanItem, TaskCheckpoint, waiting, checklists, journal, 15 CLI commands, 148 tests. Tags: v0.2.0, v0.3.0."
+    },
+    "Phase 7.1 — Core API Contract Hardening": {
+      "index": 8,
+      "status": "done",
+      "tz": "docs/archive/phase-7.1-core-api-contract-hardening.md",
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Accepted. CoreErrorDto, serde for all DTOs, answer_checkpoint, TimeProvider, versioned migrations, 3 composite transactions, UI contract doc, 183 tests. Tag: v0.3.0."
+    },
+    "Phase 8.1 — Doc Sync & Error Fix": {
+      "index": 9,
+      "status": "in_progress",
+      "tz": null,
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "In progress. Synchronize TASKS.md, pipeline-state.json, AI_CONTEXT.md; fix 3 ignored Store errors in service.rs."
     }
   },
-  "current_phase": null,
+  "current_phase": "Phase 8.1 — Doc Sync & Error Fix",
   "current_step": null,
   "started_at": "2026-06-08T03:22:00Z",
-  "last_updated": "2026-06-08T03:23:00Z"
+  "last_updated": "2026-06-19T12:00:00Z"
 }

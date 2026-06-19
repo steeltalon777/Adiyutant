@@ -99,3 +99,20 @@ Goal: Prepare Core for Android consumption — service facade, stable DTOs, plan
 - [x] 148 tests (92 core + 46 store + 7 CLI unit + 3 CLI smoke)
 - [x] ADR-0001: JSON embedded collections
 - [x] Tag: v0.2.0-core-android-readiness
+
+## Phase 8 — Core Hardening [ ] In Progress
+
+Goal: Synchronize documentation with v0.3.0 reality, fix ignored Store errors, complete DTO contract, split service facade.
+
+### Slice 1: Doc Sync & Error Fix [ ] In Progress
+- [ ] Update TASKS.md, pipeline-state.json, AI_CONTEXT.md to v0.3.0
+- [ ] Replace all `let _ = self.store...` with composite transactions
+- [ ] Add `insert_plan_item_with_checkpoint` and `answer_checkpoint_composite` to Store trait
+
+### Slice 2: DTO Contract Completion [ ] Planned
+- [ ] HabitDto, TimerDto, ReminderDto, AlarmDto, ContextDocumentDto, SuggestionDto
+- [ ] All facade methods return DTOs (no tuples)
+
+### Slice 3: Service Facade Split & Contract Tests [ ] Planned
+- [ ] Split service.rs into submodules
+- [ ] Golden JSON contract snapshots

@@ -2,13 +2,13 @@
 
 ## Repository Status
 
-This repository is in **MVP 0.1 state**. Core implemented, 103 tests, 9 CLI commands, SQLite storage.
+This repository is in **v0.3.0** state. Core implemented with service facade, DTO layer, planning domain, checkpoints, checklists, journal, 183 tests, 15 CLI commands, SQLite with 15 tables, 7 composite transactions.
 
 ## Implemented
 
-- `AdiyutantCore/adiyutant_core` — 10 domain entities, 6 local rules, `TodayState` aggregator
-- `AdiyutantCore/adiyutant_store` — `SqliteStore` with 10 tables
-- `AdiyutantCore/adiyutant_cli` — 9 commands (`today`, `log`, `checkin`, `habit`, `timer`, `reminder`, `alarm`, `context`, `suggest`)
+- `AdiyutantCore/adiyutant_core` — 16 domain entities, 6 local rules, `TodayState` aggregator, `AdiyutantCoreService` facade (use-case boundary), `StartupState`/`CurrentActivity` with time-aware heuristics
+- `AdiyutantCore/adiyutant_store` — `SqliteStore` with 15 tables, versioned migrations, 7 composite transactions
+- `AdiyutantCore/adiyutant_cli` — 15 commands (`today`, `log`, `checkin`, `startup`, `current`, `checklist`, `plan`, `habit`, `timer`, `reminder`, `alarm`, `context`, `suggest`, `journal`, `waiting`)
 
 ## Not Yet Implemented
 

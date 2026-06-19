@@ -1845,6 +1845,62 @@ impl Store for SqliteStore {
             }
         }
     }
+
+    fn insert_plan_item_with_checkpoint(
+        &self,
+        item: &PlanItem,
+        checkpoint: &TaskCheckpoint,
+    ) -> Result<(), CoreError> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = self
+            .insert_plan_item(item)
+            .and_then(|()| self.insert_task_checkpoint(checkpoint));
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
+    fn answer_checkpoint_composite(
+        &self,
+        checkpoint: &TaskCheckpoint,
+        next_checkpoint: Option<&TaskCheckpoint>,
+        journal: &JournalEntry,
+    ) -> Result<(), CoreError> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = (|| {
+            self.update_task_checkpoint(checkpoint)?;
+            if let Some(next_cp) = next_checkpoint {
+                self.insert_task_checkpoint(next_cp)?;
+            }
+            self.insert_journal_entry(journal)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -2468,6 +2524,28 @@ impl Store for NoopStore {
         self.update_checklist_run(run)?;
         self.insert_journal_entry(journal)
     }
+
+    fn insert_plan_item_with_checkpoint(
+        &self,
+        item: &PlanItem,
+        checkpoint: &TaskCheckpoint,
+    ) -> Result<(), Self::Error> {
+        self.insert_plan_item(item)?;
+        self.insert_task_checkpoint(checkpoint)
+    }
+
+    fn answer_checkpoint_composite(
+        &self,
+        checkpoint: &TaskCheckpoint,
+        next_checkpoint: Option<&TaskCheckpoint>,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error> {
+        self.update_task_checkpoint(checkpoint)?;
+        if let Some(next_cp) = next_checkpoint {
+            self.insert_task_checkpoint(next_cp)?;
+        }
+        self.insert_journal_entry(journal)
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -2481,6 +2559,10 @@ mod tests {
     use adiyutant_core::model::check_in::CheckInType;
     use adiyutant_core::model::context_document::ContextDocumentType;
     use adiyutant_core::model::habit_event::{HabitEvent, HabitEventLevel, HabitEventStatus};
+    use adiyutant_core::model::journal_entry::JournalEntryType;
+    use adiyutant_core::model::task_checkpoint::{
+        CheckpointKind, CheckpointResponse, CheckpointStatus,
+    };
     use adiyutant_core::model::timer::TimerMode;
     use chrono::NaiveDate;
     use serde_json::json;
@@ -2931,8 +3013,8 @@ mod tests {
         ChecklistItem, ChecklistItemKind, ChecklistTemplate,
     };
     use adiyutant_core::model::day_plan::{PlanItem, PlanItemStatus};
-    use adiyutant_core::model::journal_entry::{JournalEntry, JournalEntryType};
-    use adiyutant_core::model::task_checkpoint::{CheckpointKind, TaskCheckpoint};
+    use adiyutant_core::model::journal_entry::JournalEntry;
+    use adiyutant_core::model::task_checkpoint::TaskCheckpoint;
 
     fn make_plan_item(daily_log_id: Id<DailyLog>) -> PlanItem {
         PlanItem::new(daily_log_id, "Test task".into())
@@ -3371,5 +3453,174 @@ mod tests {
             ci_count, 0,
             "Transaction rollback should have removed the inserted row"
         );
+    }
+
+    // ── Composite: insert_plan_item_with_checkpoint ──
+
+    #[test]
+    fn composite_insert_plan_item_with_checkpoint_creates_both() {
+        let store = setup();
+        let log = make_daily_log("2026-06-19");
+        store.insert_daily_log(&log).unwrap();
+        let item = PlanItem::new(log.id, "Test item".into());
+        let cp = TaskCheckpoint::new(item.id, CheckpointKind::StartCheck);
+
+        store.insert_plan_item_with_checkpoint(&item, &cp).unwrap();
+
+        let saved_item = store.get_plan_item(item.id).unwrap().unwrap();
+        assert_eq!(saved_item.title, "Test item");
+
+        let checkpoints = store.list_checkpoints_by_plan_item(item.id).unwrap();
+        assert_eq!(checkpoints.len(), 1);
+        assert_eq!(checkpoints[0].kind, CheckpointKind::StartCheck);
+    }
+
+    #[test]
+    fn composite_insert_plan_item_rollback_on_checkpoint_failure() {
+        let store = setup();
+        let log = make_daily_log("2026-06-19");
+        store.insert_daily_log(&log).unwrap();
+        let item = PlanItem::new(log.id, "Rollback item".into());
+
+        // Create a checkpoint with a non-existent plan_item_id — will fail FK constraint
+        let bad_cp = TaskCheckpoint::new(
+            Id::<PlanItem>::new(), // random UUID, not in DB
+            CheckpointKind::StartCheck,
+        );
+
+        let result = store.insert_plan_item_with_checkpoint(&item, &bad_cp);
+        assert!(result.is_err(), "expected FK constraint error");
+
+        // PlanItem should NOT have been saved (transaction rolled back)
+        let saved = store.get_plan_item(item.id).unwrap();
+        assert!(saved.is_none(), "plan_item should be rolled back");
+    }
+
+    // ── Composite: answer_checkpoint_composite ──
+
+    #[test]
+    fn composite_answer_checkpoint_with_next_checkpoint() {
+        let store = setup();
+        let log = make_daily_log("2026-06-19");
+        store.insert_daily_log(&log).unwrap();
+        let item = PlanItem::new(log.id, "Checkpoint test".into());
+        store.insert_plan_item(&item).unwrap();
+
+        let mut cp = TaskCheckpoint::new(item.id, CheckpointKind::ProgressCheck);
+        cp.status = CheckpointStatus::Shown;
+        store.insert_task_checkpoint(&cp).unwrap();
+        let cp_id = cp.id;
+
+        // Mutate cp in memory as answer_checkpoint would
+        cp.status = CheckpointStatus::Answered;
+        cp.response = Some(CheckpointResponse::Done);
+        cp.answered_at = Some(adiyutant_core::datetime::AdiyutantDateTime::from_utc(
+            chrono::Utc::now(),
+        ));
+
+        let next_cp = TaskCheckpoint::new(item.id, CheckpointKind::FinishCheck);
+        let journal = JournalEntry::new(log.id, JournalEntryType::NudgeAnswered, "test".into());
+
+        store
+            .answer_checkpoint_composite(&cp, Some(&next_cp), &journal)
+            .unwrap();
+
+        // Checkpoint updated
+        let updated = store.get_task_checkpoint(cp_id).unwrap().unwrap();
+        assert_eq!(updated.status, CheckpointStatus::Answered);
+
+        // Next checkpoint created
+        let checkpoints = store.list_checkpoints_by_plan_item(item.id).unwrap();
+        let finish: Vec<_> = checkpoints
+            .iter()
+            .filter(|c| c.kind == CheckpointKind::FinishCheck)
+            .collect();
+        assert_eq!(finish.len(), 1);
+
+        // Journal entry created
+        let entries = store.list_journal_entries_by_log(log.id).unwrap();
+        assert!(!entries.is_empty());
+    }
+
+    #[test]
+    fn composite_answer_checkpoint_rollback_on_journal_failure() {
+        let store = setup();
+        let log = make_daily_log("2026-06-19");
+        store.insert_daily_log(&log).unwrap();
+        let item = PlanItem::new(log.id, "Rollback cp test".into());
+        store.insert_plan_item(&item).unwrap();
+
+        let mut cp = TaskCheckpoint::new(item.id, CheckpointKind::ProgressCheck);
+        cp.status = CheckpointStatus::Shown;
+        store.insert_task_checkpoint(&cp).unwrap();
+        let cp_id = cp.id;
+        let original_status = cp.status;
+
+        // Mutate cp
+        cp.status = CheckpointStatus::Answered;
+        cp.response = Some(CheckpointResponse::Done);
+        cp.answered_at = Some(adiyutant_core::datetime::AdiyutantDateTime::from_utc(
+            chrono::Utc::now(),
+        ));
+
+        // Create a journal entry with a type that will cause a constraint error
+        // by using a non-existent daily_log_id
+        let bad_journal = JournalEntry::new(
+            Id::<DailyLog>::new(), // random UUID not in DB
+            JournalEntryType::NudgeAnswered,
+            "test".into(),
+        );
+
+        let result = store.answer_checkpoint_composite(&cp, None, &bad_journal);
+        assert!(result.is_err(), "expected FK constraint error");
+
+        // Checkpoint should NOT have been updated (transaction rolled back)
+        let saved = store.get_task_checkpoint(cp_id).unwrap().unwrap();
+        assert_eq!(
+            saved.status, original_status,
+            "checkpoint should not be updated after rollback"
+        );
+    }
+
+    #[test]
+    fn composite_answer_checkpoint_without_next_checkpoint() {
+        let store = setup();
+        let log = make_daily_log("2026-06-19");
+        store.insert_daily_log(&log).unwrap();
+        let item = PlanItem::new(log.id, "No next cp".into());
+        store.insert_plan_item(&item).unwrap();
+
+        let mut cp = TaskCheckpoint::new(item.id, CheckpointKind::FinishCheck);
+        cp.status = CheckpointStatus::Shown;
+        store.insert_task_checkpoint(&cp).unwrap();
+        let cp_id = cp.id;
+
+        cp.status = CheckpointStatus::Answered;
+        cp.response = Some(CheckpointResponse::Done);
+        cp.answered_at = Some(adiyutant_core::datetime::AdiyutantDateTime::from_utc(
+            chrono::Utc::now(),
+        ));
+
+        let journal = JournalEntry::new(
+            log.id,
+            JournalEntryType::NudgeAnswered,
+            "test no next".into(),
+        );
+
+        store
+            .answer_checkpoint_composite(&cp, None, &journal)
+            .unwrap();
+
+        // Checkpoint updated
+        let updated = store.get_task_checkpoint(cp_id).unwrap().unwrap();
+        assert_eq!(updated.status, CheckpointStatus::Answered);
+
+        // No additional checkpoints beyond the original
+        let checkpoints = store.list_checkpoints_by_plan_item(item.id).unwrap();
+        assert_eq!(checkpoints.len(), 1);
+
+        // Journal entry created
+        let entries = store.list_journal_entries_by_log(log.id).unwrap();
+        assert!(!entries.is_empty());
     }
 }

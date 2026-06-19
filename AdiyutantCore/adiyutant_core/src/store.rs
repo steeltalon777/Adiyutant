@@ -210,4 +210,23 @@ pub trait Store {
         run: &ChecklistRun,
         journal: &JournalEntry,
     ) -> Result<(), Self::Error>;
+
+    /// Insert a plan item with its initial StartCheck checkpoint (atomic).
+    /// Used by `add_plan_item()` to ensure the item and its first checkpoint
+    /// are either both created, or neither.
+    fn insert_plan_item_with_checkpoint(
+        &self,
+        item: &PlanItem,
+        checkpoint: &TaskCheckpoint,
+    ) -> Result<(), Self::Error>;
+
+    /// Answer a checkpoint, optionally create the next checkpoint, and journal the event (atomic).
+    /// Used by `answer_checkpoint()` to ensure checkpoint update, next checkpoint creation,
+    /// and journal entry are either all committed or all rolled back.
+    fn answer_checkpoint_composite(
+        &self,
+        checkpoint: &TaskCheckpoint,
+        next_checkpoint: Option<&TaskCheckpoint>,
+        journal: &JournalEntry,
+    ) -> Result<(), Self::Error>;
 }

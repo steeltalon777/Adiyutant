@@ -229,11 +229,9 @@ impl AdiyutantCoreService {
             item.priority = p;
         }
 
-        self.store.insert_plan_item(&item)?;
-
-        // Auto-create a StartCheck checkpoint
+        // Auto-create a StartCheck checkpoint (atomic with plan_item insert)
         let cp = TaskCheckpoint::new(item.id, CheckpointKind::StartCheck);
-        let _ = self.store.insert_task_checkpoint(&cp);
+        self.store.insert_plan_item_with_checkpoint(&item, &cp)?;
 
         Ok(plan_item_to_dto(&item))
     }
@@ -436,18 +434,18 @@ impl AdiyutantCoreService {
             }
         }
 
-        self.store.update_task_checkpoint(&cp)?;
-
         let item = self
             .store
             .get_plan_item(cp.plan_item_id)?
             .ok_or_else(|| CoreError::NotFound("plan_item for checkpoint".into()))?;
 
         // Auto-create next checkpoint in the sequence
-        if let Some(next_kind) = Self::calculate_next_checkpoint(&item, &cp.kind, &resp) {
-            let next_cp = TaskCheckpoint::new(item.id, next_kind);
-            let _ = self.store.insert_task_checkpoint(&next_cp);
-        }
+        let next_cp =
+            if let Some(next_kind) = Self::calculate_next_checkpoint(&item, &cp.kind, &resp) {
+                Some(TaskCheckpoint::new(item.id, next_kind))
+            } else {
+                None
+            };
 
         // Journal auto-event: NudgeAnswered
         let entry = JournalEntry::new(
@@ -455,7 +453,10 @@ impl AdiyutantCoreService {
             JournalEntryType::NudgeAnswered,
             format!("Checkpoint answered: {} → {:?}", cp.kind.as_str(), resp),
         );
-        let _ = self.store.insert_journal_entry(&entry);
+
+        // Atomic: update_task_checkpoint + optionally insert_next_checkpoint + insert_journal_entry
+        self.store
+            .answer_checkpoint_composite(&cp, next_cp.as_ref(), &entry)?;
 
         Ok(plan_item_to_dto(&item))
     }
@@ -1692,6 +1693,30 @@ mod tests {
         ) -> Result<(), Self::Error> {
             self.update_checklist_run(run)?;
             self.insert_journal_entry(journal)
+        }
+
+        fn insert_plan_item_with_checkpoint(
+            &self,
+            item: &PlanItem,
+            checkpoint: &TaskCheckpoint,
+        ) -> Result<(), Self::Error> {
+            self.insert_plan_item(item)?;
+            self.insert_task_checkpoint(checkpoint)?;
+            Ok(())
+        }
+
+        fn answer_checkpoint_composite(
+            &self,
+            checkpoint: &TaskCheckpoint,
+            next_checkpoint: Option<&TaskCheckpoint>,
+            journal: &JournalEntry,
+        ) -> Result<(), Self::Error> {
+            self.update_task_checkpoint(checkpoint)?;
+            if let Some(next_cp) = next_checkpoint {
+                self.insert_task_checkpoint(next_cp)?;
+            }
+            self.insert_journal_entry(journal)?;
+            Ok(())
         }
     }
 
