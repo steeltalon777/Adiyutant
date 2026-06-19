@@ -2,7 +2,7 @@
 
 ## Repository Status
 
-This repository is in **v0.3.0** state. Core implemented with service facade, DTO layer, planning domain, checkpoints, checklists, journal, 183 tests, 15 CLI commands, SQLite with 15 tables, 7 composite transactions.
+This repository is in **v0.3.0** state. Core implemented with service facade, DTO layer, planning domain, checkpoints, checklists, journal, 188 tests, 15 CLI commands, SQLite with 15 tables, 7 composite transactions.
 
 ## Implemented
 
