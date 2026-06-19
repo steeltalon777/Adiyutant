@@ -104,14 +104,14 @@ Goal: Prepare Core for Android consumption — service facade, stable DTOs, plan
 
 Goal: Synchronize documentation with v0.3.0 reality, fix ignored Store errors, complete DTO contract, split service facade.
 
-### Slice 1: Doc Sync & Error Fix [ ] In Progress
-- [ ] Update TASKS.md, pipeline-state.json, AI_CONTEXT.md to v0.3.0
-- [ ] Replace all `let _ = self.store...` with composite transactions
-- [ ] Add `insert_plan_item_with_checkpoint` and `answer_checkpoint_composite` to Store trait
+### Slice 1: Doc Sync & Error Fix [x] Done
+- [x] Update TASKS.md, pipeline-state.json, AI_CONTEXT.md to v0.3.0
+- [x] Replace all `let _ = self.store...` with composite transactions
+- [x] Add `insert_plan_item_with_checkpoint` and `answer_checkpoint_composite` to Store trait
 
-### Slice 2: DTO Contract Completion [ ] Planned
-- [ ] HabitDto, TimerDto, ReminderDto, AlarmDto, ContextDocumentDto, SuggestionDto
-- [ ] All facade methods return DTOs (no tuples)
+### Slice 2: DTO Contract Completion [x] Done
+- [x] HabitDto, TimerDto, ReminderDto, AlarmDto, ContextDocumentDto, SuggestionDto
+- [x] All facade methods return DTOs (no tuples)
 
 ### Slice 3: Service Facade Split & Contract Tests [ ] Planned
 - [ ] Split service.rs into submodules

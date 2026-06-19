@@ -1,8 +1,10 @@
 use crate::current_activity::CurrentActivity;
 use crate::datetime::AdiyutantDateTime;
 use crate::dto::{
-    self, ChecklistRunDto, ChecklistTemplateDto, CurrentActivityDto, DayPlanDto, JournalEntryDto,
-    NotificationInstructionDto, PlanItemDto, StartupViewDto, TodayViewDto, WaitingTaskDto,
+    self, AlarmDto, CheckInDto, ChecklistRunDto, ChecklistTemplateDto, ContextDocumentDto,
+    CurrentActivityDto, DayPlanDto, HabitDto, HabitEventDto, JournalEntryDto,
+    NotificationInstructionDto, PlanItemDto, ReminderDto, StartupViewDto, SuggestionDto, TimerDto,
+    TodayViewDto, WaitingTaskDto,
 };
 use crate::error::CoreError;
 use crate::id::Id;
@@ -782,7 +784,7 @@ impl AdiyutantCoreService {
         sleep_score: Option<u8>,
         energy: Option<u8>,
         mood: Option<u8>,
-    ) -> Result<String, CoreError> {
+    ) -> Result<CheckInDto, CoreError> {
         use crate::model::check_in::{CheckIn, CheckInType};
         let daily_log_id = self.get_or_create_today_log()?;
         let ci_type = match checkin_type {
@@ -825,23 +827,36 @@ impl AdiyutantCoreService {
         // Atomic: insert_check_in + update_daily_log + insert_journal_entry
         self.store
             .insert_checkin_composite(&ci, daily_log_update.as_ref(), &entry)?;
-        Ok(ci.id.value().to_string())
+        Ok(CheckInDto {
+            id: ci.id.value().to_string(),
+            checkin_type: checkin_type.to_string(),
+            text: text.to_string(),
+            created_at: ci.created_at.inner().to_rfc3339(),
+        })
     }
 
     // ── Habits ─────────────────────────────────
 
-    pub fn add_habit(&self, name: &str) -> Result<String, CoreError> {
+    pub fn add_habit(&self, name: &str) -> Result<HabitDto, CoreError> {
         use crate::model::habit::Habit;
         let habit = Habit::new(name.to_string());
         self.store.insert_habit(&habit)?;
-        Ok(habit.id.value().to_string())
+        Ok(HabitDto {
+            id: habit.id.value().to_string(),
+            name: habit.name.clone(),
+            is_active: habit.is_active,
+        })
     }
 
-    pub fn list_habits(&self) -> Result<Vec<(String, String, bool)>, CoreError> {
+    pub fn list_habits(&self) -> Result<Vec<HabitDto>, CoreError> {
         let habits = self.store.list_habits()?;
         Ok(habits
             .iter()
-            .map(|h| (h.id.value().to_string(), h.name.clone(), h.is_active))
+            .map(|h| HabitDto {
+                id: h.id.value().to_string(),
+                name: h.name.clone(),
+                is_active: h.is_active,
+            })
             .collect())
     }
 
@@ -849,10 +864,11 @@ impl AdiyutantCoreService {
         &self,
         habit_id: &str,
         level: Option<&str>,
-    ) -> Result<String, CoreError> {
+    ) -> Result<HabitEventDto, CoreError> {
         use crate::model::habit_event::{HabitEvent, HabitEventLevel, HabitEventStatus};
         let id = parse_id::<Habit>(habit_id)?;
-        self.store
+        let habit = self
+            .store
             .get_habit(id)?
             .ok_or_else(|| CoreError::NotFound(habit_id.to_string()))?;
         let event_level = level
@@ -866,87 +882,110 @@ impl AdiyutantCoreService {
             .unwrap_or(HabitEventLevel::Base);
         let event = HabitEvent::new(id, HabitEventStatus::Done, event_level);
         self.store.insert_habit_event(&event)?;
-        Ok(event.id.value().to_string())
+        Ok(HabitEventDto {
+            id: event.id.value().to_string(),
+            habit_id: habit_id.to_string(),
+            habit_name: habit.name.clone(),
+            status: dto::habit_event_status_to_string(true).to_string(),
+            level: dto::habit_level_to_string(&event_level).to_string(),
+            date_time: event.date_time.inner().to_rfc3339(),
+        })
     }
 
-    pub fn skip_habit(&self, habit_id: &str) -> Result<String, CoreError> {
+    pub fn skip_habit(&self, habit_id: &str) -> Result<HabitEventDto, CoreError> {
         use crate::model::habit_event::{HabitEvent, HabitEventLevel, HabitEventStatus};
         let id = parse_id::<Habit>(habit_id)?;
-        self.store
+        let habit = self
+            .store
             .get_habit(id)?
             .ok_or_else(|| CoreError::NotFound(habit_id.to_string()))?;
         let event = HabitEvent::new(id, HabitEventStatus::Skipped, HabitEventLevel::Min);
         self.store.insert_habit_event(&event)?;
-        Ok(event.id.value().to_string())
+        Ok(HabitEventDto {
+            id: event.id.value().to_string(),
+            habit_id: habit_id.to_string(),
+            habit_name: habit.name.clone(),
+            status: dto::habit_event_status_to_string(false).to_string(),
+            level: dto::habit_level_to_string(&HabitEventLevel::Min).to_string(),
+            date_time: event.date_time.inner().to_rfc3339(),
+        })
     }
 
     // ── Timers ─────────────────────────────────
 
-    pub fn add_timer(&self, title: &str, duration_seconds: u64) -> Result<String, CoreError> {
+    pub fn add_timer(&self, title: &str, duration_seconds: u64) -> Result<TimerDto, CoreError> {
         use crate::model::timer::{TimerDefinition, TimerMode};
         let timer = TimerDefinition::new(title.to_string(), duration_seconds, TimerMode::Focus);
         self.store.insert_timer(&timer)?;
-        Ok(timer.id.value().to_string())
+        Ok(TimerDto {
+            id: timer.id.value().to_string(),
+            title: timer.title.clone(),
+            duration_seconds: timer.duration_seconds,
+            mode: dto::timer_mode_to_string(&timer.mode).to_string(),
+        })
     }
 
-    pub fn list_timers(&self) -> Result<Vec<(String, String, u64)>, CoreError> {
+    pub fn list_timers(&self) -> Result<Vec<TimerDto>, CoreError> {
         let timers = self.store.list_timers()?;
         Ok(timers
             .iter()
-            .map(|t| {
-                (
-                    t.id.value().to_string(),
-                    t.title.clone(),
-                    t.duration_seconds,
-                )
+            .map(|t| TimerDto {
+                id: t.id.value().to_string(),
+                title: t.title.clone(),
+                duration_seconds: t.duration_seconds,
+                mode: dto::timer_mode_to_string(&t.mode).to_string(),
             })
             .collect())
     }
 
     // ── Reminders ──────────────────────────────
 
-    pub fn add_reminder(&self, title: &str, schedule_rule: &str) -> Result<String, CoreError> {
+    pub fn add_reminder(&self, title: &str, schedule_rule: &str) -> Result<ReminderDto, CoreError> {
         use crate::model::reminder::ReminderDefinition;
         let reminder = ReminderDefinition::new(title.to_string(), schedule_rule.to_string());
         self.store.insert_reminder(&reminder)?;
-        Ok(reminder.id.value().to_string())
+        Ok(ReminderDto {
+            id: reminder.id.value().to_string(),
+            title: reminder.title.clone(),
+            schedule_rule: reminder.schedule_rule.clone(),
+        })
     }
 
-    pub fn list_reminders(&self) -> Result<Vec<(String, String, String)>, CoreError> {
+    pub fn list_reminders(&self) -> Result<Vec<ReminderDto>, CoreError> {
         let reminders = self.store.list_reminders()?;
         Ok(reminders
             .iter()
-            .map(|r| {
-                (
-                    r.id.value().to_string(),
-                    r.title.clone(),
-                    r.schedule_rule.clone(),
-                )
+            .map(|r| ReminderDto {
+                id: r.id.value().to_string(),
+                title: r.title.clone(),
+                schedule_rule: r.schedule_rule.clone(),
             })
             .collect())
     }
 
     // ── Alarms ─────────────────────────────────
 
-    pub fn add_alarm(&self, title: &str, time: &str) -> Result<String, CoreError> {
+    pub fn add_alarm(&self, title: &str, time: &str) -> Result<AlarmDto, CoreError> {
         use crate::model::alarm::AlarmDefinition;
         let parsed_time = chrono::NaiveTime::parse_from_str(time, "%H:%M")
             .map_err(|e| CoreError::InvalidInput(format!("invalid time: {e}")))?;
         let alarm = AlarmDefinition::new(title.to_string(), parsed_time);
         self.store.insert_alarm(&alarm)?;
-        Ok(alarm.id.value().to_string())
+        Ok(AlarmDto {
+            id: alarm.id.value().to_string(),
+            title: alarm.title.clone(),
+            time: alarm.time.format("%H:%M").to_string(),
+        })
     }
 
-    pub fn list_alarms(&self) -> Result<Vec<(String, String, String)>, CoreError> {
+    pub fn list_alarms(&self) -> Result<Vec<AlarmDto>, CoreError> {
         let alarms = self.store.list_alarms()?;
         Ok(alarms
             .iter()
-            .map(|a| {
-                (
-                    a.id.value().to_string(),
-                    a.title.clone(),
-                    a.time.format("%H:%M").to_string(),
-                )
+            .map(|a| AlarmDto {
+                id: a.id.value().to_string(),
+                title: a.title.clone(),
+                time: a.time.format("%H:%M").to_string(),
             })
             .collect())
     }
@@ -958,49 +997,55 @@ impl AdiyutantCoreService {
         doc_type: &str,
         title: &str,
         content: &str,
-    ) -> Result<String, CoreError> {
+    ) -> Result<ContextDocumentDto, CoreError> {
         use crate::model::context_document::{ContextDocument, ContextDocumentType};
         let dt: ContextDocumentType = serde_json::from_value(serde_json::json!(doc_type))
             .map_err(|_| CoreError::InvalidInput(format!("unknown doc_type: {doc_type}")))?;
         let doc = ContextDocument::new(dt, title.to_string(), content.to_string());
         self.store.insert_context_document(&doc)?;
-        Ok(doc.id.value().to_string())
+        Ok(ContextDocumentDto {
+            id: doc.id.value().to_string(),
+            doc_type: dto::context_doc_type_to_string(&doc.doc_type).to_string(),
+            title: doc.title.clone(),
+            content: doc.content_markdown.clone(),
+        })
     }
 
-    pub fn list_context_documents(&self) -> Result<Vec<(String, String, String)>, CoreError> {
+    pub fn list_context_documents(&self) -> Result<Vec<ContextDocumentDto>, CoreError> {
         let docs = self.store.list_context_documents()?;
         Ok(docs
             .iter()
-            .map(|d| {
-                (
-                    d.id.value().to_string(),
-                    format!("{:?}", d.doc_type),
-                    d.title.clone(),
-                )
+            .map(|d| ContextDocumentDto {
+                id: d.id.value().to_string(),
+                doc_type: dto::context_doc_type_to_string(&d.doc_type).to_string(),
+                title: d.title.clone(),
+                content: d.content_markdown.clone(),
             })
             .collect())
     }
 
     // ── Suggestions ────────────────────────────
 
-    pub fn get_suggestions(&self) -> Result<Vec<String>, CoreError> {
+    pub fn get_suggestions(&self) -> Result<Vec<SuggestionDto>, CoreError> {
         let state = self.build_today_state()?;
         let result = LocalRuleAgentGateway::evaluate(&state);
         Ok(result
             .proposals
             .iter()
-            .map(|p| {
-                let reason = p
+            .map(|p| SuggestionDto {
+                proposal_type: p.proposal_type.clone(),
+                reason: p
                     .payload_json
                     .get("reason")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let suggestion = p
+                    .unwrap_or("")
+                    .to_string(),
+                suggestion: p
                     .payload_json
                     .get("suggestion")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                format!("{}: {} → {}", p.proposal_type, reason, suggestion)
+                    .unwrap_or("")
+                    .to_string(),
             })
             .collect())
     }

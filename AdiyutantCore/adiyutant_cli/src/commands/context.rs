@@ -61,7 +61,7 @@ pub fn handle(facade: &AdiyutantCoreService, cmd: &ContextCmd) {
             title,
             content,
         } => match facade.add_context_document(doc_type.as_json_str(), title, content) {
-            Ok(id) => println!("✅ Context document added (ID: {id})"),
+            Ok(dto) => println!("✅ Context document added: {} (ID: {})", dto.title, dto.id),
             Err(e) => {
                 eprintln!("Error adding context document: {e}");
                 std::process::exit(1);
@@ -74,8 +74,8 @@ pub fn handle(facade: &AdiyutantCoreService, cmd: &ContextCmd) {
                     return;
                 }
                 println!("📄 Context documents:");
-                for (_id, doc_type, title) in &docs {
-                    println!("  • [{doc_type}] {title}");
+                for d in &docs {
+                    println!("  • [{}] {} ({})", d.doc_type, d.title, d.id);
                 }
             }
             Err(e) => {

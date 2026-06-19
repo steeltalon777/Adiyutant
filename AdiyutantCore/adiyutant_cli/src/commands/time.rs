@@ -54,7 +54,10 @@ pub fn handle_timer(facade: &AdiyutantCoreService, cmd: &TimerCmd) {
         } => {
             let seconds = minutes * 60;
             match facade.add_timer(name, seconds) {
-                Ok(id) => println!("⏱️ Timer \"{name}\" saved ({minutes} min, ID: {id})"),
+                Ok(dto) => println!(
+                    "⏱️ Timer \"{}\" saved ({} min, mode: {}, ID: {})",
+                    dto.title, minutes, dto.mode, dto.id
+                ),
                 Err(e) => {
                     eprintln!("Error saving timer: {e}");
                     std::process::exit(1);
@@ -69,7 +72,10 @@ pub fn handle_timer(facade: &AdiyutantCoreService, cmd: &TimerCmd) {
 pub fn handle_reminder(facade: &AdiyutantCoreService, cmd: &ReminderCmd) {
     match cmd {
         ReminderCmd::Add { title, at } => match facade.add_reminder(title, at) {
-            Ok(id) => println!("🔔 Reminder \"{title}\" added (rule: {at}, ID: {id})"),
+            Ok(dto) => println!(
+                "🔔 Reminder \"{}\" added (rule: {}, ID: {})",
+                dto.title, dto.schedule_rule, dto.id
+            ),
             Err(e) => {
                 eprintln!("Error adding reminder: {e}");
                 std::process::exit(1);
@@ -82,8 +88,8 @@ pub fn handle_reminder(facade: &AdiyutantCoreService, cmd: &ReminderCmd) {
                     return;
                 }
                 println!("🔔 Reminders ({}):", reminders.len());
-                for (id, title, rule) in &reminders {
-                    println!("  • \"{title}\" — rule: {rule} ({id})");
+                for r in &reminders {
+                    println!("  • \"{}\" — rule: {} ({})", r.title, r.schedule_rule, r.id);
                 }
             }
             Err(e) => {
@@ -99,7 +105,10 @@ pub fn handle_reminder(facade: &AdiyutantCoreService, cmd: &ReminderCmd) {
 pub fn handle_alarm(facade: &AdiyutantCoreService, cmd: &AlarmCmd) {
     match cmd {
         AlarmCmd::Add { title, at } => match facade.add_alarm(title, at) {
-            Ok(id) => println!("⏰ Alarm \"{title}\" set for {at} (ID: {id})"),
+            Ok(dto) => println!(
+                "⏰ Alarm \"{}\" set for {} (ID: {})",
+                dto.title, dto.time, dto.id
+            ),
             Err(e) => {
                 eprintln!("Error adding alarm: {e}");
                 std::process::exit(1);
@@ -112,8 +121,8 @@ pub fn handle_alarm(facade: &AdiyutantCoreService, cmd: &AlarmCmd) {
                     return;
                 }
                 println!("⏰ Alarms ({}):", alarms.len());
-                for (id, title, time) in &alarms {
-                    println!("  • \"{title}\" at {time} ({id})");
+                for a in &alarms {
+                    println!("  • \"{}\" at {} ({})", a.title, a.time, a.id);
                 }
             }
             Err(e) => {

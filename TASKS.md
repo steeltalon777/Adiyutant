@@ -2,12 +2,11 @@
 
 ## Current
 
-TASK-0016 — Phase 8.1: Core Android Readiness Hardening (Doc Sync & Error Fix)
+TASK-0018 — Phase 8.3: Service Facade Split & Contract Tests
 
 ## Next
 
-- [ ] TASK-0017 — Phase 8.2: DTO Contract Completion (HabitDto, TimerDto, etc.)
-- [ ] TASK-0018 — Phase 8.3: Service Facade Split & Contract Tests
+- [ ] TASK-0019 — Phase 9: Android/Kotlin Project Bootstrap
 
 ## Done
 
@@ -20,3 +19,5 @@ TASK-0016 — Phase 8.1: Core Android Readiness Hardening (Doc Sync & Error Fix)
 - [x] TASK-0006 — Stabilization (Phase 6)
 - [x] TASK-0007 — Core Service Facade & Android Readiness (Phase 7)
 - [x] TASK-0008 — Core API Contract Hardening (Phase 7.1)
+- [x] TASK-0016 — Phase 8.1: Doc Sync & Error Fix
+- [x] TASK-0017 — Phase 8.2: DTO Contract Completion

@@ -10,7 +10,7 @@ pub fn cmd_suggest(facade: &AdiyutantCoreService) {
             }
             println!("💡 Suggestions based on today's state:");
             for s in &suggestions {
-                println!("  • {s}");
+                println!("  • [{}] {}: {}", s.proposal_type, s.reason, s.suggestion);
             }
         }
         Err(e) => {

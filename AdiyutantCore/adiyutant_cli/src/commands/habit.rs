@@ -46,7 +46,7 @@ impl LevelArg {
 pub fn handle(facade: &AdiyutantCoreService, cmd: &HabitCmd) {
     match cmd {
         HabitCmd::Add { name } => match facade.add_habit(name) {
-            Ok(id) => println!("✅ Habit added: {name} (ID: {id})"),
+            Ok(dto) => println!("✅ Habit added: {} (ID: {})", dto.name, dto.id),
             Err(e) => {
                 eprintln!("Error adding habit: {e}");
                 std::process::exit(1);
@@ -58,9 +58,9 @@ pub fn handle(facade: &AdiyutantCoreService, cmd: &HabitCmd) {
                     println!("No habits tracked.");
                 } else {
                     println!("📋 Habits:");
-                    for (id, name, active) in &habits {
-                        let status = if *active { "" } else { " (inactive)" };
-                        println!("  • {name}{status} — {id}");
+                    for h in &habits {
+                        let status = if h.is_active { "" } else { " (inactive)" };
+                        println!("  • {}{status} — {}", h.name, h.id);
                     }
                 }
             }
@@ -71,7 +71,10 @@ pub fn handle(facade: &AdiyutantCoreService, cmd: &HabitCmd) {
         },
         HabitCmd::Done { name, level } => {
             match facade.mark_habit_done(name, Some(level.as_str())) {
-                Ok(id) => println!("✅ Habit done (event ID: {id})"),
+                Ok(dto) => println!(
+                    "✅ Habit done: {} at {} (event ID: {})",
+                    dto.habit_name, dto.date_time, dto.id
+                ),
                 Err(e) => {
                     eprintln!("Error marking habit done: {e}");
                     std::process::exit(1);
@@ -79,7 +82,7 @@ pub fn handle(facade: &AdiyutantCoreService, cmd: &HabitCmd) {
             }
         }
         HabitCmd::Skip { name } => match facade.skip_habit(name) {
-            Ok(id) => println!("⏭ Habit skipped (event ID: {id})"),
+            Ok(dto) => println!("⏭ Habit skipped: {} (event ID: {})", dto.habit_name, dto.id),
             Err(e) => {
                 eprintln!("Error skipping habit: {e}");
                 std::process::exit(1);

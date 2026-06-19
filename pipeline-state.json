@@ -96,17 +96,27 @@
     },
     "Phase 8.1 — Doc Sync & Error Fix": {
       "index": 9,
-      "status": "in_progress",
-      "tz": null,
+      "status": "done",
+      "tz": "docs/tz/phase-8.1-doc-sync-and-error-fix.md",
       "build_report": null,
       "review_verdict": null,
       "retries": 0,
       "max_retries": 3,
-      "notes": "In progress. Synchronize TASKS.md, pipeline-state.json, AI_CONTEXT.md; fix 3 ignored Store errors in service.rs."
+      "notes": "Completed. TASKS.md, pipeline-state.json, AI_CONTEXT.md synced. 3 let _ = errors fixed. 2 new composite transactions. Tags retained."
+    },
+    "Phase 8.2 — DTO Contract Completion": {
+      "index": 10,
+      "status": "done",
+      "tz": "docs/tz/phase-8.2-dto-contract-completion.md",
+      "build_report": null,
+      "review_verdict": null,
+      "retries": 0,
+      "max_retries": 3,
+      "notes": "Completed. 8 new DTOs (Habit, HabitEvent, Timer, Reminder, Alarm, ContextDocument, CheckIn, Suggestion). 14 methods updated. 196 tests. No tuple/String returns in facade."
     }
   },
-  "current_phase": "Phase 8.1 — Doc Sync & Error Fix",
+  "current_phase": "Phase 8.3 — Service Facade Split & Contract Tests",
   "current_step": null,
   "started_at": "2026-06-08T03:22:00Z",
-  "last_updated": "2026-06-19T12:00:00Z"
+  "last_updated": "2026-06-19T07:56:28Z"
 }

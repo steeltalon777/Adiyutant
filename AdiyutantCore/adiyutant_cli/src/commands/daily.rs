@@ -117,7 +117,7 @@ pub fn cmd_checkin(facade: &AdiyutantCoreService, args: &CheckinArgs) {
     let (text, sleep_score, energy, mood) = parse_metrics(&args.text);
 
     match facade.create_checkin(args.checkin_type.as_str(), &text, sleep_score, energy, mood) {
-        Ok(_id) => {
+        Ok(_dto) => {
             let type_name = args.checkin_type.as_str();
             println!("✅ {type_name} check-in recorded.");
             if sleep_score.is_some() || energy.is_some() || mood.is_some() {

@@ -1,6 +1,11 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use crate::model::check_in::CheckInType;
+use crate::model::context_document::ContextDocumentType;
+use crate::model::habit_event::HabitEventLevel;
+use crate::model::timer::TimerMode;
+
 // ──────────────────────────────────────────────
 // Primary DTOs — flat, stable output models
 // Rules: no Id<T>, no serde_json::Value, no chrono inner types.
@@ -144,7 +149,143 @@ pub struct JournalEntryDto {
     pub timestamp: String,
 }
 
+// ─── Wave D: Habit, Timer, Reminder, Alarm DTOs ──
+
+/// View model for a habit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HabitDto {
+    pub id: String,
+    pub name: String,
+    pub is_active: bool,
+}
+
+/// View model for a habit event (done/skip).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HabitEventDto {
+    pub id: String,
+    pub habit_id: String,
+    pub habit_name: String,
+    /// "Done" / "Skipped"
+    pub status: String,
+    /// "Min" / "Light" / "Base" / "Full" — for Done events; "Min" for Skipped
+    pub level: String,
+    /// ISO-8601 timestamp
+    pub date_time: String,
+}
+
+/// View model for a timer definition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimerDto {
+    pub id: String,
+    pub title: String,
+    pub duration_seconds: u64,
+    /// "Focus" / "Break" / "Custom"
+    pub mode: String,
+}
+
+/// View model for a reminder definition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReminderDto {
+    pub id: String,
+    pub title: String,
+    pub schedule_rule: String,
+}
+
+/// View model for an alarm definition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlarmDto {
+    pub id: String,
+    pub title: String,
+    /// "HH:MM" format
+    pub time: String,
+}
+
+// ─── Wave E: Context, CheckIn, Suggestion DTOs ──
+
+/// View model for a context document.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextDocumentDto {
+    pub id: String,
+    /// "core", "goals", "rules", "routine", "health", "work", "custom", etc.
+    pub doc_type: String,
+    pub title: String,
+    /// Full markdown content
+    pub content: String,
+}
+
+/// View model for a check-in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckInDto {
+    pub id: String,
+    /// "morning" / "day" / "evening" / "shutdown"
+    pub checkin_type: String,
+    pub text: String,
+    /// ISO-8601 timestamp
+    pub created_at: String,
+}
+
+/// View model for a local rule suggestion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestionDto {
+    /// Rule type that generated the suggestion (e.g. "habit_reminder")
+    pub proposal_type: String,
+    /// Why this suggestion was generated
+    pub reason: String,
+    /// What the user should do
+    pub suggestion: String,
+}
+
 // ─── helpers ──────────────────────────────────
+
+// ─── enum-to-string helpers (stable contract) ──
+
+pub(crate) fn habit_event_status_to_string(done: bool) -> &'static str {
+    if done { "done" } else { "skipped" }
+}
+
+pub(crate) fn habit_level_to_string(level: &HabitEventLevel) -> &'static str {
+    match level {
+        HabitEventLevel::Min => "min",
+        HabitEventLevel::Light => "light",
+        HabitEventLevel::Base => "base",
+        HabitEventLevel::Full => "full",
+        HabitEventLevel::Custom => "custom",
+    }
+}
+
+pub(crate) fn timer_mode_to_string(mode: &TimerMode) -> &'static str {
+    match mode {
+        TimerMode::Focus => "focus",
+        TimerMode::Rest => "rest",
+        TimerMode::Custom => "custom",
+    }
+}
+
+pub(crate) fn context_doc_type_to_string(doc_type: &ContextDocumentType) -> &'static str {
+    match doc_type {
+        ContextDocumentType::Core => "core",
+        ContextDocumentType::Goals => "goals",
+        ContextDocumentType::Rules => "rules",
+        ContextDocumentType::Routine => "routine",
+        ContextDocumentType::Health => "health",
+        ContextDocumentType::Work => "work",
+        ContextDocumentType::Custom => "custom",
+        ContextDocumentType::LifeCore => "life_core",
+        ContextDocumentType::RecoveryProtocol => "recovery_protocol",
+        ContextDocumentType::Tone => "tone",
+        ContextDocumentType::PlanningPreferences => "planning_preferences",
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn checkin_type_to_string(ct: &CheckInType) -> &'static str {
+    match ct {
+        CheckInType::Morning => "morning",
+        CheckInType::Day => "day",
+        CheckInType::Evening => "evening",
+        CheckInType::Shutdown => "shutdown",
+    }
+}
 
 pub(crate) fn naive_date_to_string(d: NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
@@ -333,5 +474,129 @@ mod tests {
         let back: CoreErrorDto = serde_json::from_str(&json).unwrap();
         assert_eq!(dto.code, back.code);
         assert_eq!(dto.recoverable, back.recoverable);
+    }
+
+    #[test]
+    fn habit_dto_serde_round_trip() {
+        let dto = HabitDto {
+            id: "uuid".into(),
+            name: "Exercise".into(),
+            is_active: true,
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: HabitDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.id, back.id);
+        assert_eq!(dto.name, back.name);
+        assert_eq!(dto.is_active, back.is_active);
+    }
+
+    #[test]
+    fn habit_event_dto_serde_round_trip() {
+        let dto = HabitEventDto {
+            id: "evt-uuid".into(),
+            habit_id: "hab-uuid".into(),
+            habit_name: "Exercise".into(),
+            status: "done".into(),
+            level: "base".into(),
+            date_time: "2026-06-19T10:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: HabitEventDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.id, back.id);
+        assert_eq!(dto.habit_id, back.habit_id);
+        assert_eq!(dto.habit_name, back.habit_name);
+        assert_eq!(dto.status, back.status);
+        assert_eq!(dto.level, back.level);
+        assert_eq!(dto.date_time, back.date_time);
+    }
+
+    #[test]
+    fn timer_dto_serde_round_trip() {
+        let dto = TimerDto {
+            id: "timer-uuid".into(),
+            title: "Focus".into(),
+            duration_seconds: 1500,
+            mode: "focus".into(),
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: TimerDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.id, back.id);
+        assert_eq!(dto.title, back.title);
+        assert_eq!(dto.duration_seconds, back.duration_seconds);
+        assert_eq!(dto.mode, back.mode);
+    }
+
+    #[test]
+    fn reminder_dto_serde_round_trip() {
+        let dto = ReminderDto {
+            id: "rem-uuid".into(),
+            title: "Drink water".into(),
+            schedule_rule: "every 2h".into(),
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: ReminderDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.id, back.id);
+        assert_eq!(dto.title, back.title);
+        assert_eq!(dto.schedule_rule, back.schedule_rule);
+    }
+
+    #[test]
+    fn alarm_dto_serde_round_trip() {
+        let dto = AlarmDto {
+            id: "alarm-uuid".into(),
+            title: "Wake up".into(),
+            time: "07:00".into(),
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: AlarmDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.id, back.id);
+        assert_eq!(dto.title, back.title);
+        assert_eq!(dto.time, back.time);
+    }
+
+    #[test]
+    fn context_document_dto_serde_round_trip() {
+        let dto = ContextDocumentDto {
+            id: "doc-uuid".into(),
+            doc_type: "core".into(),
+            title: "My Core".into(),
+            content: "# Values\n\nBe kind.".into(),
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: ContextDocumentDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.id, back.id);
+        assert_eq!(dto.doc_type, back.doc_type);
+        assert_eq!(dto.title, back.title);
+        assert_eq!(dto.content, back.content);
+    }
+
+    #[test]
+    fn check_in_dto_serde_round_trip() {
+        let dto = CheckInDto {
+            id: "ci-uuid".into(),
+            checkin_type: "morning".into(),
+            text: "feeling great".into(),
+            created_at: "2026-06-19T07:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: CheckInDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.id, back.id);
+        assert_eq!(dto.checkin_type, back.checkin_type);
+        assert_eq!(dto.text, back.text);
+        assert_eq!(dto.created_at, back.created_at);
+    }
+
+    #[test]
+    fn suggestion_dto_serde_round_trip() {
+        let dto = SuggestionDto {
+            proposal_type: "habit_reminder".into(),
+            reason: "Habit not done today".into(),
+            suggestion: "Do your morning exercise".into(),
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        let back: SuggestionDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(dto.proposal_type, back.proposal_type);
+        assert_eq!(dto.reason, back.reason);
+        assert_eq!(dto.suggestion, back.suggestion);
     }
 }
