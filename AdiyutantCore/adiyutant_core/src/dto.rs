@@ -237,6 +237,13 @@ pub struct SuggestionDto {
 
 // ─── helpers ──────────────────────────────────
 
+// ─── Phase 8.4A: Bundle DTOs ────────────────────
+
+pub use crate::bundle::dto::{
+    BundleActionDto, BundleApplyReportDto, BundleExportReportDto, BundleIssueDto, BundlePreviewDto,
+    BundleSectionReportDto, BundleValidationReportDto,
+};
+
 // ─── enum-to-string helpers (stable contract) ──
 
 pub(crate) fn habit_event_status_to_string(done: bool) -> &'static str {

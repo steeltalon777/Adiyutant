@@ -1,0 +1,5 @@
+rules:
+  - slug: "deep-work-first"
+    title: "Deep work first"
+    description: "Always complete one deep work block before checking messages"
+    category: "productivity"

@@ -1,0 +1,18 @@
+# preview-only — ignored on apply in 8.4A
+slug: "adiyutant-roadmap"
+project_slug: "adiyutant"
+phases:
+  - slug: "mvp"
+    title: "MVP"
+    items:
+      - slug: "bundle-v1"
+        title: "Bundle v1 contract"
+      - slug: "import-history"
+        title: "Import history in SQLite"
+  - slug: "android"
+    title: "Android"
+    items:
+      - slug: "today-screen"
+        title: "Today screen"
+      - slug: "import-button"
+        title: "Import bundle button"

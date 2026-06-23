@@ -87,12 +87,6 @@ pub trait Store {
         &self,
         id: Id<ContextDocument>,
     ) -> Result<Option<ContextDocument>, Self::Error>;
-    /// Look up a context document by its stable bundle-import source slug.
-    /// Returns `None` if no row with that slug exists.
-    fn get_context_document_by_source_slug(
-        &self,
-        source_slug: &str,
-    ) -> Result<Option<ContextDocument>, Self::Error>;
     fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error>;
     fn update_context_document(&self, cd: &ContextDocument) -> Result<(), Self::Error>;
     fn delete_context_document(&self, id: Id<ContextDocument>) -> Result<(), Self::Error>;
@@ -155,12 +149,6 @@ pub trait Store {
     fn get_checklist_template(
         &self,
         id: Id<ChecklistTemplate>,
-    ) -> Result<Option<ChecklistTemplate>, Self::Error>;
-    /// Look up a template by its stable bundle-import slug.
-    /// Returns `None` if no row with that slug exists.
-    fn get_checklist_template_by_slug(
-        &self,
-        slug: &str,
     ) -> Result<Option<ChecklistTemplate>, Self::Error>;
     fn list_checklist_templates_by_category(
         &self,
@@ -243,47 +231,27 @@ pub trait Store {
         journal: &JournalEntry,
     ) -> Result<(), Self::Error>;
 
-    // ── ImportRun history (Phase 8.4A) ─────────────────────────────
-
-    /// Insert a new import run record. Used by bundle apply.
+    // ── ImportRun ──
     fn insert_import_run(&self, run: &ImportRun) -> Result<(), Self::Error>;
-    /// Look up a single import run by id.
-    fn get_import_run(&self, id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error>;
-    /// Update an import run (e.g. set `finished_at` and `summary_json`).
-    fn update_import_run(&self, run: &ImportRun) -> Result<(), Self::Error>;
-    /// List recent import runs, newest first.
     fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error>;
 
-    // ── Bundle apply composite (Phase 8.4A, all-or-nothing) ─────────
-
-    /// Apply a fully-planned bundle operation as a single atomic
-    /// transaction. All supported-section writes (context documents,
-    /// checklist templates) and the import-run record are either all
-    /// committed or all rolled back.
-    ///
-    /// The planner in `crate::bundle::planner` is responsible for
-    /// resolving append/merge semantics and pre-building this op.
-    /// Real transactional stores (e.g. `SqliteStore`) MUST override
-    /// this method and wrap the writes in a single transaction. The
-    /// default implementation here is non-transactional and is suitable
-    /// for `MockStore` and tests only.
-    fn apply_bundle_composite(
+    // ── Slug-based lookups (for bundle merge) ──
+    fn get_checklist_template_by_slug(
         &self,
-        op: &crate::bundle::BundleApplyOp,
-    ) -> Result<(), Self::Error> {
-        for cd in &op.context_documents {
-            match self.get_context_document(cd.id)? {
-                Some(_) => self.update_context_document(cd)?,
-                None => self.insert_context_document(cd)?,
-            }
-        }
-        for tpl in &op.checklist_templates {
-            match self.get_checklist_template(tpl.id)? {
-                Some(_) => self.update_checklist_template(tpl)?,
-                None => self.insert_checklist_template(tpl)?,
-            }
-        }
-        self.insert_import_run(&op.import_run)?;
-        Ok(())
-    }
+        slug: &str,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error>;
+    fn upsert_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error>;
+    fn get_context_document_by_source_slug(
+        &self,
+        slug: &str,
+    ) -> Result<Option<ContextDocument>, Self::Error>;
+    fn upsert_context_document(&self, doc: &ContextDocument) -> Result<(), Self::Error>;
+
+    /// Apply a bundle's supported sections atomically within a single transaction.
+    fn bundle_apply_composite(
+        &self,
+        bundle: &crate::bundle::bundle_models::AdiyutantBundle,
+        mode: crate::bundle::bundle_models::ImportMode,
+        import_run: &ImportRun,
+    ) -> Result<(), Self::Error>;
 }

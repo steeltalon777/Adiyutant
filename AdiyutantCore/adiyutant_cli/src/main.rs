@@ -6,7 +6,9 @@ use clap::{Parser, Subcommand};
 use crate::commands::checklist::{self, ChecklistCmd};
 use crate::commands::context::{self, ContextCmd};
 use crate::commands::daily::{self, CheckinArgs};
+use crate::commands::export_cmd::{self, ExportCmd};
 use crate::commands::habit::{self, HabitCmd};
+use crate::commands::import_cmd::{self, ImportCmd};
 use crate::commands::journal::{self, JournalCmd};
 use crate::commands::plan::{self, PlanCmd};
 use crate::commands::suggest;
@@ -80,6 +82,16 @@ enum Commands {
     Waiting {
         #[command(subcommand)]
         cmd: WaitingCmd,
+    },
+    /// Bundle import commands
+    Import {
+        #[command(subcommand)]
+        cmd: ImportCmd,
+    },
+    /// Export commands
+    Export {
+        #[command(subcommand)]
+        cmd: ExportCmd,
     },
 }
 
@@ -185,6 +197,16 @@ fn main() {
             let store = init_store_or_exit();
             let facade = build_facade(store);
             waiting::handle_waiting(&facade, cmd);
+        }
+        Commands::Import { cmd } => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            import_cmd::handle_import(&facade, cmd);
+        }
+        Commands::Export { cmd } => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            export_cmd::handle_export(&facade, cmd);
         }
     }
 }

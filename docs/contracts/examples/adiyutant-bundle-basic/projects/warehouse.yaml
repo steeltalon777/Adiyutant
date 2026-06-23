@@ -1,0 +1,9 @@
+# preview-only — ignored on apply in 8.4A
+slug: "warehouse"
+title: "Warehouse"
+phases:
+  - slug: "intake"
+    title: "Intake"
+  - slug: "storage"
+    title: "Storage"
+    depends_on: "intake"

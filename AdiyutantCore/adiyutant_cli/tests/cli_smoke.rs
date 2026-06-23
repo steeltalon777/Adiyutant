@@ -103,3 +103,53 @@ fn full_day_scenario() {
 
     cleanup(&db);
 }
+
+// Resolved at compile time from the adiyutant_cli crate root
+const EXAMPLE_BUNDLE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/contracts/examples/adiyutant-bundle-basic"
+);
+
+#[test]
+fn import_validate_help() {
+    let db = temp_db();
+    let out = adiyutant(&["import", "validate", "--help"], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Validate"));
+    assert!(stdout.contains("bundle"));
+    cleanup(&db);
+}
+
+#[test]
+fn import_preview_help() {
+    let db = temp_db();
+    let out = adiyutant(&["import", "preview", "--help"], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Preview"));
+    assert!(stdout.contains("bundle"));
+    cleanup(&db);
+}
+
+#[test]
+fn export_help() {
+    let db = temp_db();
+    let out = adiyutant(&["export", "--help"], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Export"));
+    cleanup(&db);
+}
+
+#[test]
+fn basic_import_flow() {
+    let db = temp_db();
+    let out = adiyutant(&["import", "validate", EXAMPLE_BUNDLE], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Bundle ID:"));
+    assert!(stdout.contains("example-basic-2026-06"));
+    assert!(stdout.contains("Bundle is valid"));
+    cleanup(&db);
+}

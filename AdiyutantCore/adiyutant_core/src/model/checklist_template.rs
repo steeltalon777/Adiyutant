@@ -6,10 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct ChecklistTemplate {
     pub id: Id<ChecklistTemplate>,
+    pub slug: Option<String>, // stable human-readable identifier for merge
     pub title: String,
-    /// Stable human/AI-readable identifier used by portable bundle import.
-    /// Optional to keep backward compatibility with pre-8.4A rows.
-    pub slug: Option<String>,
     pub category: String, // morning, day, evening, shutdown, recovery
     pub items: Vec<ChecklistItem>,
     pub version: u32,
@@ -23,8 +21,23 @@ impl ChecklistTemplate {
         let now = AdiyutantDateTime::now();
         Self {
             id: Id::new(),
-            title,
             slug: None,
+            title,
+            category,
+            items: vec![],
+            version: 1,
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn with_slug(title: String, category: String, slug: Option<String>) -> Self {
+        let now = AdiyutantDateTime::now();
+        Self {
+            id: Id::new(),
+            slug,
+            title,
             category,
             items: vec![],
             version: 1,
@@ -39,6 +52,7 @@ impl ChecklistTemplate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChecklistItem {
     pub id: Id<ChecklistItem>,
+    pub slug: Option<String>, // stable human-readable identifier for merge
     pub template_id: Id<ChecklistTemplate>,
     pub question: String,
     pub kind: ChecklistItemKind,
@@ -55,6 +69,7 @@ impl ChecklistItem {
     ) -> Self {
         Self {
             id: Id::new(),
+            slug: None,
             template_id,
             question,
             kind,

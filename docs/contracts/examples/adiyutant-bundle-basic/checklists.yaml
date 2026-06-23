@@ -1,0 +1,14 @@
+templates:
+  - slug: "morning-ready"
+    title: "Morning Ready"
+    category: "morning"
+    items:
+      - slug: "dressed"
+        question: "Am I dressed and ready?"
+        kind: "Checkbox"
+        order: 1
+      - slug: "energy-level"
+        question: "Energy level?"
+        kind: "Scale"
+        options: ["1", "2", "3", "4", "5"]
+        order: 2

@@ -296,17 +296,6 @@ impl Store for MockStore {
             .get(&id.value().to_string())
             .cloned())
     }
-    fn get_context_document_by_source_slug(
-        &self,
-        source_slug: &str,
-    ) -> Result<Option<ContextDocument>, Self::Error> {
-        Ok(self
-            .context_docs
-            .borrow()
-            .values()
-            .find(|cd| cd.source_slug.as_deref() == Some(source_slug))
-            .cloned())
-    }
     fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error> {
         Ok(self.context_docs.borrow().values().cloned().collect())
     }
@@ -489,17 +478,6 @@ impl Store for MockStore {
             .checklist_templates
             .borrow()
             .get(&id.value().to_string())
-            .cloned())
-    }
-    fn get_checklist_template_by_slug(
-        &self,
-        slug: &str,
-    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
-        Ok(self
-            .checklist_templates
-            .borrow()
-            .values()
-            .find(|t| t.slug.as_deref() == Some(slug))
             .cloned())
     }
     fn list_checklist_templates_by_category(
@@ -686,6 +664,15 @@ impl Store for MockStore {
         Ok(())
     }
 
+    fn bundle_apply_composite(
+        &self,
+        _bundle: &crate::bundle::bundle_models::AdiyutantBundle,
+        _mode: crate::bundle::bundle_models::ImportMode,
+        import_run: &ImportRun,
+    ) -> Result<(), Self::Error> {
+        self.insert_import_run(import_run)
+    }
+
     // ── ImportRun ──
     fn insert_import_run(&self, run: &ImportRun) -> Result<(), Self::Error> {
         self.import_runs
@@ -693,20 +680,75 @@ impl Store for MockStore {
             .insert(run.id.value().to_string(), run.clone());
         Ok(())
     }
-    fn get_import_run(&self, id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error> {
-        Ok(self
-            .import_runs
-            .borrow()
-            .get(&id.value().to_string())
-            .cloned())
-    }
-    fn update_import_run(&self, run: &ImportRun) -> Result<(), Self::Error> {
-        self.import_runs
-            .borrow_mut()
-            .insert(run.id.value().to_string(), run.clone());
-        Ok(())
-    }
     fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error> {
         Ok(self.import_runs.borrow().values().cloned().collect())
+    }
+
+    // ── Slug-based lookups ──
+    fn get_checklist_template_by_slug(
+        &self,
+        slug: &str,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
+        Ok(self
+            .checklist_templates
+            .borrow()
+            .values()
+            .find(|t| t.slug.as_deref() == Some(slug))
+            .cloned())
+    }
+    fn upsert_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error> {
+        if let Some(ref slug) = template.slug {
+            let existing = self
+                .checklist_templates
+                .borrow()
+                .values()
+                .find(|t| t.slug.as_deref() == Some(slug))
+                .cloned();
+            if let Some(existing_template) = existing {
+                let mut updated = template.clone();
+                updated.id = existing_template.id;
+                self.checklist_templates
+                    .borrow_mut()
+                    .insert(updated.id.value().to_string(), updated);
+            } else {
+                self.insert_checklist_template(template)?;
+            }
+        } else {
+            self.insert_checklist_template(template)?;
+        }
+        Ok(())
+    }
+    fn get_context_document_by_source_slug(
+        &self,
+        slug: &str,
+    ) -> Result<Option<ContextDocument>, Self::Error> {
+        Ok(self
+            .context_docs
+            .borrow()
+            .values()
+            .find(|d| d.source_slug.as_deref() == Some(slug))
+            .cloned())
+    }
+    fn upsert_context_document(&self, doc: &ContextDocument) -> Result<(), Self::Error> {
+        if let Some(ref slug) = doc.source_slug {
+            let existing = self
+                .context_docs
+                .borrow()
+                .values()
+                .find(|d| d.source_slug.as_deref() == Some(slug))
+                .cloned();
+            if let Some(existing_doc) = existing {
+                let mut updated = doc.clone();
+                updated.id = existing_doc.id;
+                self.context_docs
+                    .borrow_mut()
+                    .insert(updated.id.value().to_string(), updated);
+            } else {
+                self.insert_context_document(doc)?;
+            }
+        } else {
+            self.insert_context_document(doc)?;
+        }
+        Ok(())
     }
 }

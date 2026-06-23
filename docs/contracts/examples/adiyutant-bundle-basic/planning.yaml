@@ -1,0 +1,15 @@
+default_mode: "manual_review"
+daily_capacity:
+  deep_tasks_max: 3
+  light_tasks_max: 5
+templates:
+  - id: "normal-workday"
+    title: "Normal Workday"
+    blocks:
+      - kind: "morning"
+        start: "06:30"
+      - kind: "deep_work"
+        start: "09:00"
+        duration_minutes: 120
+candidate_hints:
+  - "Prefer project tasks before random backlog"

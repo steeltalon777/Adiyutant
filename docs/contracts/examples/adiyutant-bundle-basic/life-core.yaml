@@ -1,0 +1,26 @@
+profile:
+  name: "Alex"
+  bio: "Software engineer focused on health and productivity"
+  values:
+    - "Health first"
+    - "Continuous learning"
+    - "Deep work"
+  goals:
+    - "Run a marathon"
+    - "Build Adiyutant"
+
+context_documents:
+  - slug: "life-purpose"
+    title: "Life Purpose"
+    doc_type: "life_core"
+    content: |
+      # My Life Purpose
+
+      Build tools that help people live intentionally.
+  - slug: "health-protocols"
+    title: "Health Protocols"
+    doc_type: "recovery_protocol"
+    content: |
+      # Health Protocols
+
+      If sleep < 6h, use recovery mode.

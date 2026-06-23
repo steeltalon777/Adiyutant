@@ -22,11 +22,10 @@ pub enum ContextDocumentType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextDocument {
     pub id: Id<Self>,
+    pub source_slug: Option<String>, // stable import slug for merge
+    pub source_metadata_json: Option<String>, // any extra manifest data
     pub doc_type: ContextDocumentType,
     pub title: String,
-    /// Stable source slug used by portable bundle import for merge semantics.
-    /// Optional for backward compatibility with pre-8.4A rows.
-    pub source_slug: Option<String>,
     pub content_markdown: String,
     pub version: u32,
     pub is_active: bool,
@@ -39,9 +38,32 @@ impl ContextDocument {
         let now = AdiyutantDateTime::now();
         Self {
             id: Id::new(),
+            source_slug: None,
+            source_metadata_json: None,
             doc_type,
             title,
-            source_slug: None,
+            content_markdown,
+            version: 1,
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn with_source(
+        doc_type: ContextDocumentType,
+        title: String,
+        content_markdown: String,
+        source_slug: Option<String>,
+        source_metadata_json: Option<String>,
+    ) -> Self {
+        let now = AdiyutantDateTime::now();
+        Self {
+            id: Id::new(),
+            source_slug,
+            source_metadata_json,
+            doc_type,
+            title,
             content_markdown,
             version: 1,
             is_active: true,

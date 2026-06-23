@@ -1,0 +1,16 @@
+# preview-only — ignored on apply in 8.4A
+slug: "warehouse-roadmap"
+project_slug: "warehouse"
+phases:
+  - slug: "intake"
+    title: "Intake"
+    items:
+      - slug: "scan-in"
+        title: "Scan inbound"
+  - slug: "storage"
+    title: "Storage"
+    items:
+      - slug: "rack-plan"
+        title: "Rack plan"
+      - slug: "pick-path"
+        title: "Pick path"

@@ -1,4 +1,4 @@
-mod mock_store;
+pub(crate) mod mock_store;
 
 use super::helpers::parse_id;
 use super::*;

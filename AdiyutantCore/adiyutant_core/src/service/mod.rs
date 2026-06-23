@@ -1,5 +1,4 @@
 mod basic_entities;
-mod bundle;
 mod checkin;
 mod checklists;
 mod checkpoints;
@@ -10,9 +9,16 @@ mod suggestions;
 mod today;
 
 #[cfg(test)]
-mod tests;
+pub mod tests;
 
-use crate::error::CoreError;
+use std::path::Path;
+
+use crate::bundle::bundle_models::ImportMode;
+use crate::bundle::dto::{
+    BundleApplyReportDto, BundleExportReportDto, BundlePreviewDto, BundleValidationReportDto,
+};
+use crate::bundle::source::BundleSource;
+use crate::error::{CoreError, CoreResult};
 use crate::store::Store;
 use crate::time_provider::{RealTimeProvider, TimeProvider};
 
@@ -23,6 +29,7 @@ use crate::time_provider::{RealTimeProvider, TimeProvider};
 pub struct AdiyutantCoreService {
     pub(crate) store: Box<dyn Store<Error = CoreError>>,
     pub(crate) time: Box<dyn TimeProvider>,
+    pub(crate) bundle: crate::bundle::service::BundleService,
 }
 
 impl AdiyutantCoreService {
@@ -30,6 +37,7 @@ impl AdiyutantCoreService {
         Self {
             store,
             time: Box::new(RealTimeProvider),
+            bundle: crate::bundle::service::BundleService::new(),
         }
     }
 
@@ -37,6 +45,36 @@ impl AdiyutantCoreService {
         store: Box<dyn Store<Error = CoreError>>,
         time: Box<dyn TimeProvider>,
     ) -> Self {
-        Self { store, time }
+        Self {
+            store,
+            time,
+            bundle: crate::bundle::service::BundleService::new(),
+        }
+    }
+
+    // ── Bundle operations ──
+
+    pub fn validate_bundle(&self, source: &BundleSource) -> CoreResult<BundleValidationReportDto> {
+        self.bundle.validate(source)
+    }
+
+    pub fn preview_bundle_import(
+        &self,
+        source: &BundleSource,
+        mode: ImportMode,
+    ) -> CoreResult<BundlePreviewDto> {
+        self.bundle.preview(source, mode, &*self.store)
+    }
+
+    pub fn apply_bundle_import(
+        &self,
+        source: &BundleSource,
+        mode: ImportMode,
+    ) -> CoreResult<BundleApplyReportDto> {
+        self.bundle.apply(source, mode, &*self.store)
+    }
+
+    pub fn export_bundle(&self, target: &Path) -> CoreResult<BundleExportReportDto> {
+        self.bundle.export_bundle(target, &*self.store)
     }
 }

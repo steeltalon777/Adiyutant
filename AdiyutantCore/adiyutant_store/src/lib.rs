@@ -1,6 +1,10 @@
+use adiyutant_core::bundle::bundle_models::{
+    AdiyutantBundle, BundleChecklistItem, BundleChecklistTemplate, ImportMode,
+};
 use adiyutant_core::error::CoreError;
 use adiyutant_core::id::Id;
 use adiyutant_core::model::action_proposal::ProposalStatus;
+use adiyutant_core::model::context_document::ContextDocumentType;
 use adiyutant_core::model::*;
 use adiyutant_core::store::Store;
 use chrono::NaiveDate;
@@ -113,6 +117,31 @@ fn run_migration(conn: &Connection) -> Result<(), CoreError> {
             );
         ").map_err(|e| CoreError::Storage(e.to_string()))?;
         mark_migration(conn, 2, "v0.2-planning-checklists-journal")?;
+    }
+
+    if current < 3 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS import_runs (
+                id TEXT PRIMARY KEY,
+                bundle_id TEXT NOT NULL,
+                bundle_title TEXT NOT NULL,
+                schema_version TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT NOT NULL,
+                summary_json TEXT NOT NULL
+            );
+
+            ALTER TABLE checklist_templates ADD COLUMN slug TEXT;
+
+            ALTER TABLE context_documents ADD COLUMN source_slug TEXT;
+            ALTER TABLE context_documents ADD COLUMN source_metadata_json TEXT;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_templates_slug ON checklist_templates(slug) WHERE slug IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_context_documents_source_slug ON context_documents(source_slug) WHERE source_slug IS NOT NULL;
+        ").map_err(|e| CoreError::Storage(e.to_string()))?;
+        mark_migration(conn, 3, "v0.3-bundle-import-history")?;
     }
 
     Ok(())
@@ -246,6 +275,132 @@ impl SqliteStore {
                 Err(e)
             }
         }
+    }
+
+    fn apply_bundle_inner(
+        &self,
+        bundle: &AdiyutantBundle,
+        mode: ImportMode,
+        import_run: &ImportRun,
+    ) -> Result<(), CoreError> {
+        self.insert_import_run(import_run)?;
+
+        // ── life_core ──
+        if let Some(lc) = &bundle.life_core {
+            if lc.profile.is_some() {
+                let exists = self
+                    .get_context_document_by_source_slug("profile")
+                    .ok()
+                    .flatten();
+                if let Some(mut existing) = exists {
+                    existing.updated_at = adiyutant_core::datetime::AdiyutantDateTime::now();
+                    self.upsert_context_document(&existing)?;
+                } else {
+                    let doc = adiyutant_core::model::context_document::ContextDocument::with_source(
+                        adiyutant_core::model::context_document::ContextDocumentType::LifeCore,
+                        "Profile".into(),
+                        serde_json::to_string(&lc.profile).unwrap_or_default(),
+                        Some("profile".into()),
+                        None,
+                    );
+                    self.upsert_context_document(&doc)?;
+                }
+            }
+            for doc in &lc.context_documents {
+                apply_context_doc_internal(
+                    &doc.slug,
+                    &doc.title,
+                    &doc.doc_type,
+                    &doc.content,
+                    self,
+                    mode,
+                )?;
+            }
+        }
+
+        // ── routines ──
+        if let Some(rs) = &bundle.routines {
+            for entry in &rs.routines {
+                let slug = entry.slug.as_deref().unwrap_or(&entry.title);
+                let content = format!(
+                    "# {}\n\n{}\n\n## Steps\n{}",
+                    entry.title,
+                    entry.description.as_deref().unwrap_or(""),
+                    entry
+                        .steps
+                        .iter()
+                        .map(|s| format!("- {s}"))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+                apply_context_doc_internal(
+                    &Some(slug.to_string()),
+                    &entry.title,
+                    "routine",
+                    &content,
+                    self,
+                    mode,
+                )?;
+            }
+        }
+
+        // ── rules ──
+        if let Some(rs) = &bundle.rules {
+            for entry in &rs.rules {
+                let slug = entry.slug.as_deref().unwrap_or(&entry.title);
+                let category = entry.category.as_deref().unwrap_or("rules");
+                apply_context_doc_internal(
+                    &Some(slug.to_string()),
+                    &entry.title,
+                    category,
+                    &entry.description,
+                    self,
+                    mode,
+                )?;
+            }
+        }
+
+        // ── checklists ──
+        if let Some(cs) = &bundle.checklists {
+            for ct in &cs.templates {
+                apply_checklist_template_internal(ct, self, mode)?;
+            }
+        }
+
+        // ── planning ──
+        if bundle.planning.is_some() {
+            let exists = self
+                .get_context_document_by_source_slug("planning")
+                .ok()
+                .flatten();
+            if let Some(mut existing) = exists {
+                existing.updated_at = adiyutant_core::datetime::AdiyutantDateTime::now();
+                self.upsert_context_document(&existing)?;
+            } else {
+                let doc = adiyutant_core::model::context_document::ContextDocument::with_source(
+                    adiyutant_core::model::context_document::ContextDocumentType::PlanningPreferences,
+                    "Planning Preferences".into(),
+                    "# Planning Preferences\n\nDefault planning configuration.".into(),
+                    Some("planning".into()),
+                    None,
+                );
+                self.upsert_context_document(&doc)?;
+            }
+        }
+
+        // ── context ──
+        for doc_entry in &bundle.context_docs {
+            apply_context_doc_internal(
+                &doc_entry.slug,
+                &doc_entry.title,
+                "custom",
+                &doc_entry.content,
+                self,
+                mode,
+            )?;
+        }
+
+        Ok(())
     }
 }
 
@@ -923,7 +1078,7 @@ impl Store for SqliteStore {
     fn insert_context_document(&self, cd: &ContextDocument) -> Result<(), Self::Error> {
         self.conn
             .execute(
-                "INSERT INTO context_documents (id, doc_type, title, content_markdown, version, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO context_documents (id, doc_type, title, content_markdown, version, is_active, created_at, updated_at, source_slug, source_metadata_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     uuid_to_string(cd.id),
                     json_to_string(&cd.doc_type),
@@ -933,6 +1088,8 @@ impl Store for SqliteStore {
                     bool_to_int(cd.is_active),
                     datetime_to_string(&cd.created_at),
                     datetime_to_string(&cd.updated_at),
+                    cd.source_slug,
+                    cd.source_metadata_json,
                 ],
             )
             .map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -946,7 +1103,7 @@ impl Store for SqliteStore {
         let id_str = uuid_to_string(id);
         let mut stmt = self
             .conn
-            .prepare("SELECT id, doc_type, title, content_markdown, version, is_active, created_at, updated_at FROM context_documents WHERE id = ?1")
+            .prepare("SELECT id, doc_type, title, content_markdown, version, is_active, created_at, updated_at, source_slug, source_metadata_json FROM context_documents WHERE id = ?1")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let mut rows = stmt
@@ -963,7 +1120,7 @@ impl Store for SqliteStore {
     fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, doc_type, title, content_markdown, version, is_active, created_at, updated_at FROM context_documents ORDER BY created_at ASC")
+            .prepare("SELECT id, doc_type, title, content_markdown, version, is_active, created_at, updated_at, source_slug, source_metadata_json FROM context_documents ORDER BY created_at ASC")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let rows = stmt
@@ -981,13 +1138,15 @@ impl Store for SqliteStore {
         let affected = self
             .conn
             .execute(
-                "UPDATE context_documents SET doc_type = ?1, title = ?2, content_markdown = ?3, version = ?4, is_active = ?5, updated_at = ?6 WHERE id = ?7",
+                "UPDATE context_documents SET doc_type = ?1, title = ?2, content_markdown = ?3, version = ?4, is_active = ?5, source_slug = ?6, source_metadata_json = ?7, updated_at = ?8 WHERE id = ?9",
                 params![
                     json_to_string(&cd.doc_type),
                     cd.title,
                     cd.content_markdown,
                     cd.version as i64,
                     bool_to_int(cd.is_active),
+                    cd.source_slug,
+                    cd.source_metadata_json,
                     datetime_to_string(&cd.updated_at),
                     uuid_to_string(cd.id),
                 ],
@@ -1454,7 +1613,7 @@ impl Store for SqliteStore {
 
     fn insert_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error> {
         self.conn.execute(
-            "INSERT INTO checklist_templates (id, title, category, items_json, version, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO checklist_templates (id, title, category, items_json, version, is_active, created_at, updated_at, slug) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 uuid_to_string(template.id),
                 template.title,
@@ -1464,6 +1623,7 @@ impl Store for SqliteStore {
                 template.is_active as i32,
                 datetime_to_string(&template.created_at),
                 datetime_to_string(&template.updated_at),
+                template.slug,
             ],
         )
         .map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -1476,7 +1636,7 @@ impl Store for SqliteStore {
     ) -> Result<Option<ChecklistTemplate>, Self::Error> {
         let id_str = uuid_to_string(id);
         let mut stmt = self.conn
-            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at FROM checklist_templates WHERE id = ?1")
+            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at, slug FROM checklist_templates WHERE id = ?1")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         let mut rows = stmt
             .query_map(params![id_str], |row| Ok(row_to_checklist_template(row)))
@@ -1490,7 +1650,7 @@ impl Store for SqliteStore {
 
     fn list_checklist_templates(&self) -> Result<Vec<ChecklistTemplate>, Self::Error> {
         let mut stmt = self.conn
-            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at FROM checklist_templates ORDER BY title")
+            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at, slug FROM checklist_templates ORDER BY title")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         let rows = stmt
             .query_map([], |row| Ok(row_to_checklist_template(row)))
@@ -1507,7 +1667,7 @@ impl Store for SqliteStore {
         category: &str,
     ) -> Result<Vec<ChecklistTemplate>, Self::Error> {
         let mut stmt = self.conn
-            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at FROM checklist_templates WHERE category = ?1 ORDER BY title")
+            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at, slug FROM checklist_templates WHERE category = ?1 ORDER BY title")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         let rows = stmt
             .query_map(params![category], |row| Ok(row_to_checklist_template(row)))
@@ -1521,13 +1681,14 @@ impl Store for SqliteStore {
 
     fn update_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error> {
         let affected = self.conn.execute(
-            "UPDATE checklist_templates SET title = ?1, category = ?2, items_json = ?3, version = ?4, is_active = ?5, updated_at = ?6 WHERE id = ?7",
+            "UPDATE checklist_templates SET title = ?1, category = ?2, items_json = ?3, version = ?4, is_active = ?5, slug = ?6, updated_at = ?7 WHERE id = ?8",
             params![
                 template.title,
                 template.category,
                 serde_json::to_string(&template.items).map_err(|e| CoreError::Storage(e.to_string()))?,
                 template.version,
                 template.is_active as i32,
+                template.slug,
                 datetime_to_string(&template.updated_at),
                 uuid_to_string(template.id),
             ],
@@ -1902,32 +2063,149 @@ impl Store for SqliteStore {
         }
     }
 
-    // ── ImportRun (Stage 0 stub — Unit C will fill in) ──
-    fn insert_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
+    // ── ImportRun ──
+
+    fn insert_import_run(&self, run: &ImportRun) -> Result<(), Self::Error> {
+        self.conn.execute(
+            "INSERT INTO import_runs (id, bundle_id, bundle_title, schema_version, mode, status, started_at, finished_at, summary_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                uuid_to_string(run.id),
+                run.bundle_id,
+                run.bundle_title,
+                run.schema_version,
+                run.mode,
+                run.status,
+                datetime_to_string(&run.started_at),
+                datetime_to_string(&run.finished_at),
+                run.summary_json,
+            ],
+        ).map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
-    fn get_import_run(&self, _id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error> {
-        Ok(None)
-    }
-    fn update_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
-        Ok(())
-    }
+
     fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error> {
-        Ok(vec![])
+        let mut stmt = self.conn
+            .prepare("SELECT id, bundle_id, bundle_title, schema_version, mode, status, started_at, finished_at, summary_json FROM import_runs ORDER BY started_at DESC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok(row_to_import_run(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut runs = Vec::new();
+        for row in rows {
+            runs.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(runs)
     }
+
+    // ── Slug-based lookups ──
 
     fn get_checklist_template_by_slug(
         &self,
-        _slug: &str,
+        slug: &str,
     ) -> Result<Option<ChecklistTemplate>, Self::Error> {
-        Ok(None)
+        let mut stmt = self.conn
+            .prepare("SELECT id, title, category, items_json, version, is_active, created_at, updated_at, slug FROM checklist_templates WHERE slug = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![slug], |row| Ok(row_to_checklist_template(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(t)) => Ok(Some(t?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn upsert_checklist_template(&self, template: &ChecklistTemplate) -> Result<(), Self::Error> {
+        if let Some(ref slug) = template.slug {
+            let existing = self.get_checklist_template_by_slug(slug)?;
+            if let Some(existing_template) = existing {
+                self.conn.execute(
+                    "UPDATE checklist_templates SET title = ?1, category = ?2, items_json = ?3, version = ?4, is_active = ?5, updated_at = ?6 WHERE id = ?7",
+                    params![
+                        template.title,
+                        template.category,
+                        json_to_string(&template.items),
+                        template.version,
+                        bool_to_int(template.is_active),
+                        datetime_to_string(&template.updated_at),
+                        uuid_to_string(existing_template.id),
+                    ],
+                ).map_err(|e| CoreError::Storage(e.to_string()))?;
+            } else {
+                self.insert_checklist_template(template)?;
+            }
+        } else {
+            self.insert_checklist_template(template)?;
+        }
+        Ok(())
     }
 
     fn get_context_document_by_source_slug(
         &self,
-        _source_slug: &str,
+        slug: &str,
     ) -> Result<Option<ContextDocument>, Self::Error> {
-        Ok(None)
+        let mut stmt = self.conn
+            .prepare("SELECT id, doc_type, title, content_markdown, version, is_active, created_at, updated_at, source_slug, source_metadata_json FROM context_documents WHERE source_slug = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![slug], |row| Ok(row_to_context_document(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(cd)) => Ok(Some(cd?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn upsert_context_document(&self, doc: &ContextDocument) -> Result<(), Self::Error> {
+        if let Some(ref slug) = doc.source_slug {
+            let existing = self.get_context_document_by_source_slug(slug)?;
+            if let Some(existing_doc) = existing {
+                self.conn.execute(
+                    "UPDATE context_documents SET doc_type = ?1, title = ?2, content_markdown = ?3, version = ?4, is_active = ?5, source_metadata_json = ?6, updated_at = ?7 WHERE id = ?8",
+                    params![
+                        json_to_string(&doc.doc_type),
+                        doc.title,
+                        doc.content_markdown,
+                        doc.version as i64,
+                        bool_to_int(doc.is_active),
+                        doc.source_metadata_json,
+                        datetime_to_string(&doc.updated_at),
+                        uuid_to_string(existing_doc.id),
+                    ],
+                ).map_err(|e| CoreError::Storage(e.to_string()))?;
+            } else {
+                self.insert_context_document(doc)?;
+            }
+        } else {
+            self.insert_context_document(doc)?;
+        }
+        Ok(())
+    }
+
+    fn bundle_apply_composite(
+        &self,
+        bundle: &AdiyutantBundle,
+        mode: ImportMode,
+        import_run: &ImportRun,
+    ) -> Result<(), Self::Error> {
+        self.conn
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let result = self.apply_bundle_inner(bundle, mode, import_run);
+        match result {
+            Ok(()) => {
+                self.conn
+                    .execute("COMMIT", [])
+                    .map_err(|e| CoreError::Storage(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
     }
 }
 
@@ -2029,6 +2307,7 @@ fn row_to_timer(row: &rusqlite::Row<'_>) -> Result<TimerDefinition, CoreError> {
 
 fn row_to_context_document(row: &rusqlite::Row<'_>) -> Result<ContextDocument, CoreError> {
     let source_slug: Option<String> = row.get(8).ok();
+    let source_metadata_json: Option<String> = row.get(9).ok();
     Ok(ContextDocument {
         id: parse_uuid(row_get::<String>(row, 0)?.as_str())?,
         doc_type: json_from_str(&row_get::<String>(row, 1)?)?,
@@ -2039,6 +2318,7 @@ fn row_to_context_document(row: &rusqlite::Row<'_>) -> Result<ContextDocument, C
         created_at: deserialize_datetime(&row_get::<String>(row, 6)?)?,
         updated_at: deserialize_datetime(&row_get::<String>(row, 7)?)?,
         source_slug,
+        source_metadata_json,
     })
 }
 
@@ -2176,6 +2456,135 @@ fn row_to_journal_entry(row: &rusqlite::Row<'_>) -> Result<JournalEntry, CoreErr
         })?,
         summary: row_get(row, 4)?,
     })
+}
+
+fn row_to_import_run(row: &rusqlite::Row<'_>) -> Result<ImportRun, CoreError> {
+    Ok(ImportRun {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        bundle_id: row_get(row, 1)?,
+        bundle_title: row_get(row, 2)?,
+        schema_version: row_get(row, 3)?,
+        mode: row_get(row, 4)?,
+        status: row_get(row, 5)?,
+        started_at: parse_datetime(&row_get::<String>(row, 6)?)?,
+        finished_at: parse_datetime(&row_get::<String>(row, 7)?)?,
+        summary_json: row_get(row, 8)?,
+    })
+}
+
+// ──────────────────────────────────────────────
+// Bundle apply helpers (used by bundle_apply_composite)
+// ──────────────────────────────────────────────
+
+fn apply_context_doc_internal(
+    slug: &Option<String>,
+    title: &str,
+    doc_type_str: &str,
+    content: &str,
+    store: &SqliteStore,
+    mode: ImportMode,
+) -> Result<(), CoreError> {
+    let lookup = slug.as_deref().unwrap_or(title);
+    let doc_type = parse_doc_type_internal(doc_type_str);
+    let exists = store
+        .get_context_document_by_source_slug(lookup)
+        .ok()
+        .flatten();
+
+    match (exists, mode) {
+        (Some(mut existing), ImportMode::Merge) => {
+            existing.title = title.to_string();
+            existing.doc_type = doc_type;
+            existing.content_markdown = content.to_string();
+            existing.version += 1;
+            existing.updated_at = adiyutant_core::datetime::AdiyutantDateTime::now();
+            store.upsert_context_document(&existing)?;
+        }
+        (Some(_), ImportMode::Append) => {}
+        (None, _) => {
+            let doc = adiyutant_core::model::context_document::ContextDocument::with_source(
+                doc_type,
+                title.to_string(),
+                content.to_string(),
+                slug.clone(),
+                None,
+            );
+            store.upsert_context_document(&doc)?;
+        }
+    }
+    Ok(())
+}
+
+fn apply_checklist_template_internal(
+    bundle_ct: &BundleChecklistTemplate,
+    store: &SqliteStore,
+    mode: ImportMode,
+) -> Result<(), CoreError> {
+    let exists = store
+        .get_checklist_template_by_slug(&bundle_ct.slug)
+        .ok()
+        .flatten();
+
+    match (exists, mode) {
+        (Some(mut existing), ImportMode::Merge) => {
+            existing.title = bundle_ct.title.clone();
+            existing.category = bundle_ct.category.clone();
+            existing.items = convert_checklist_items(&bundle_ct.items, existing.id);
+            existing.version += 1;
+            existing.updated_at = adiyutant_core::datetime::AdiyutantDateTime::now();
+            store.upsert_checklist_template(&existing)?;
+        }
+        (Some(_), ImportMode::Append) => {}
+        (None, _) => {
+            let mut template = ChecklistTemplate::with_slug(
+                bundle_ct.title.clone(),
+                bundle_ct.category.clone(),
+                Some(bundle_ct.slug.clone()),
+            );
+            template.items = convert_checklist_items(&bundle_ct.items, template.id);
+            store.upsert_checklist_template(&template)?;
+        }
+    }
+    Ok(())
+}
+
+fn convert_checklist_items(
+    items: &[BundleChecklistItem],
+    template_id: Id<ChecklistTemplate>,
+) -> Vec<ChecklistItem> {
+    items
+        .iter()
+        .map(|i| {
+            let mut item = ChecklistItem::new(
+                template_id,
+                i.question.clone(),
+                parse_checklist_kind_internal(&i.kind),
+                i.order,
+            );
+            item.options = i.options.clone();
+            item.slug = i.slug.clone();
+            item
+        })
+        .collect()
+}
+
+fn parse_checklist_kind_internal(s: &str) -> ChecklistItemKind {
+    match s.to_lowercase().as_str() {
+        "checkbox" => ChecklistItemKind::Checkbox,
+        "choice" => ChecklistItemKind::Choice,
+        "scale" => ChecklistItemKind::Scale,
+        "text" => ChecklistItemKind::Text,
+        "optionalcomment" | "optional_comment" => ChecklistItemKind::OptionalComment,
+        "habitevent" | "habit_event" => ChecklistItemKind::HabitEvent,
+        "tasklink" | "task_link" => ChecklistItemKind::TaskLink,
+        "timerstart" | "timer_start" => ChecklistItemKind::TimerStart,
+        _ => ChecklistItemKind::Text,
+    }
+}
+
+fn parse_doc_type_internal(s: &str) -> ContextDocumentType {
+    serde_json::from_value(serde_json::Value::String(s.to_lowercase()))
+        .unwrap_or(ContextDocumentType::Custom)
 }
 
 // ──────────────────────────────────────────────
@@ -2328,12 +2737,6 @@ impl Store for NoopStore {
     ) -> Result<Option<ContextDocument>, Self::Error> {
         Ok(None)
     }
-    fn get_context_document_by_source_slug(
-        &self,
-        _source_slug: &str,
-    ) -> Result<Option<ContextDocument>, Self::Error> {
-        Ok(None)
-    }
     fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error> {
         Ok(vec![])
     }
@@ -2449,12 +2852,6 @@ impl Store for NoopStore {
     fn get_checklist_template(
         &self,
         _id: Id<ChecklistTemplate>,
-    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
-        Ok(None)
-    }
-    fn get_checklist_template_by_slug(
-        &self,
-        _slug: &str,
     ) -> Result<Option<ChecklistTemplate>, Self::Error> {
         Ok(None)
     }
@@ -2595,14 +2992,36 @@ impl Store for NoopStore {
     fn insert_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
         Ok(())
     }
-    fn get_import_run(&self, _id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error> {
-        Ok(None)
-    }
-    fn update_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
-        Ok(())
-    }
     fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error> {
         Ok(vec![])
+    }
+
+    // ── Slug-based lookups (Noop) ──
+    fn get_checklist_template_by_slug(
+        &self,
+        _slug: &str,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
+        Ok(None)
+    }
+    fn upsert_checklist_template(&self, _template: &ChecklistTemplate) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_context_document_by_source_slug(
+        &self,
+        _slug: &str,
+    ) -> Result<Option<ContextDocument>, Self::Error> {
+        Ok(None)
+    }
+    fn upsert_context_document(&self, _doc: &ContextDocument) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn bundle_apply_composite(
+        &self,
+        _bundle: &AdiyutantBundle,
+        _mode: ImportMode,
+        _import_run: &ImportRun,
+    ) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
@@ -3477,7 +3896,7 @@ mod tests {
         let version_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_versions", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_count, 2);
+        assert_eq!(version_count, 3);
     }
 
     #[test]
@@ -3680,5 +4099,182 @@ mod tests {
         // Journal entry created
         let entries = store.list_journal_entries_by_log(log.id).unwrap();
         assert!(!entries.is_empty());
+    }
+
+    // ── Bundle apply composite — success and rollback ──
+
+    fn make_test_bundle() -> AdiyutantBundle {
+        use adiyutant_core::bundle::bundle_models::{
+            ContextDocEntry, LifeCoreContextDoc, LifeCoreProfile, LifeCoreSection,
+        };
+        use adiyutant_core::bundle::manifest::Manifest;
+        use std::collections::HashMap;
+
+        AdiyutantBundle {
+            manifest: Manifest {
+                schema_version: "adiyutant.bundle.v1".into(),
+                bundle_id: "test-bundle".into(),
+                title: "Test Bundle".into(),
+                created_at: "2026-06-23T10:00:00Z".into(),
+                capabilities: HashMap::new(),
+                sections: {
+                    let mut m = HashMap::new();
+                    m.insert("life_core".into(), "life-core.yaml".into());
+                    m
+                },
+            },
+            life_core: Some(LifeCoreSection {
+                profile: Some(LifeCoreProfile {
+                    name: Some("Test".into()),
+                    bio: None,
+                    values: vec![],
+                    goals: vec![],
+                }),
+                context_documents: vec![
+                    LifeCoreContextDoc {
+                        slug: Some("doc-1".into()),
+                        title: "Document 1".into(),
+                        doc_type: "life_core".into(),
+                        content: "# Doc 1\n\nContent.".into(),
+                    },
+                    LifeCoreContextDoc {
+                        slug: Some("doc-2".into()),
+                        title: "Document 2".into(),
+                        doc_type: "life_core".into(),
+                        content: "# Doc 2\n\nMore content.".into(),
+                    },
+                ],
+            }),
+            routines: None,
+            rules: None,
+            checklists: None,
+            planning: None,
+            context_docs: vec![ContextDocEntry {
+                slug: Some("personal".into()),
+                title: "Personal".into(),
+                content: "# Personal\n\nPersonal context.".into(),
+            }],
+            projects: vec![],
+            roadmaps: vec![],
+            unknown_files: vec![],
+        }
+    }
+
+    fn make_import_run() -> ImportRun {
+        use adiyutant_core::datetime::AdiyutantDateTime;
+        ImportRun {
+            id: Id::new(),
+            bundle_id: "test-bundle".into(),
+            bundle_title: "Test Bundle".into(),
+            schema_version: "adiyutant.bundle.v1".into(),
+            mode: "append".into(),
+            status: "applied".into(),
+            started_at: AdiyutantDateTime::now(),
+            finished_at: AdiyutantDateTime::now(),
+            summary_json: "{}".into(),
+        }
+    }
+
+    #[test]
+    fn bundle_apply_success_writes_data() {
+        let store = SqliteStore::new_in_memory().unwrap();
+        store.migrate().unwrap();
+
+        let bundle = make_test_bundle();
+        let mode = ImportMode::Append;
+        let run = make_import_run();
+
+        assert_eq!(store.list_import_runs().unwrap().len(), 0);
+        assert_eq!(store.list_context_documents().unwrap().len(), 0);
+
+        store.bundle_apply_composite(&bundle, mode, &run).unwrap();
+
+        // All data should be committed
+        assert_eq!(store.list_import_runs().unwrap().len(), 1);
+        assert!(
+            !store.list_context_documents().unwrap().is_empty(),
+            "context documents should be written"
+        );
+    }
+
+    fn make_test_bundle_with_checklist() -> AdiyutantBundle {
+        use adiyutant_core::bundle::bundle_models::{
+            BundleChecklistItem, BundleChecklistTemplate, ChecklistsSection,
+        };
+        let mut bundle = make_test_bundle();
+        bundle.checklists = Some(ChecklistsSection {
+            templates: vec![BundleChecklistTemplate {
+                slug: "test-checklist".into(),
+                title: "Test Checklist".into(),
+                category: "morning".into(),
+                items: vec![BundleChecklistItem {
+                    slug: Some("item-1".into()),
+                    question: "Did you test?".into(),
+                    kind: "Checkbox".into(),
+                    options: vec![],
+                    order: 1,
+                }],
+            }],
+        });
+        bundle
+    }
+
+    #[test]
+    fn bundle_apply_rollback_mid_apply() {
+        let store = SqliteStore::new_in_memory().unwrap();
+        store.migrate().unwrap();
+
+        // Install a trigger that causes checklist INSERT to FAIL.
+        // This simulates a mid-apply error AFTER life_core context documents
+        // have been written (they are processed first in apply_bundle_inner)
+        // but BEFORE the apply completes. The transaction ROLLBACK must undo
+        // the already-written life_core context docs.
+        store
+            .conn
+            .execute_batch(
+                "CREATE TEMP TRIGGER fail_checklist_insert
+                 BEFORE INSERT ON checklist_templates
+                 BEGIN
+                     SELECT RAISE(FAIL, 'forced: checklist template insert rejected');
+                 END;",
+            )
+            .unwrap();
+
+        // Bundle with life_core (processed FIRST) AND checklists (processed AFTER)
+        let bundle = make_test_bundle_with_checklist();
+        let mode = ImportMode::Append;
+        let run = make_import_run();
+
+        // Verify clean state
+        assert!(store.list_context_documents().unwrap().is_empty());
+        assert!(store.list_checklist_templates().unwrap().is_empty());
+        assert_eq!(store.list_import_runs().unwrap().len(), 0);
+
+        // Apply should fail — checklist trigger fires AFTER life_core writes
+        let result = store.bundle_apply_composite(&bundle, mode, &run);
+        assert!(
+            result.is_err(),
+            "checklist trigger should cause apply to fail mid-way"
+        );
+
+        // Verify TRANSACTIONAL ROLLBACK: life_core context docs written inside
+        // the transaction must NOT persist after the checklist insert fails.
+        assert!(
+            store.list_context_documents().unwrap().is_empty(),
+            "life_core context docs written before the failure must be rolled back"
+        );
+
+        // Verify import_run was also rolled back
+        assert_eq!(
+            store.list_import_runs().unwrap().len(),
+            0,
+            "import_run must be rolled back with the transaction"
+        );
+
+        // No partial checklist writes either
+        assert!(
+            store.list_checklist_templates().unwrap().is_empty(),
+            "no checklist templates should exist after rolled-back apply"
+        );
     }
 }
