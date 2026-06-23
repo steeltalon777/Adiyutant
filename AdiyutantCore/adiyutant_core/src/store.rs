@@ -263,9 +263,27 @@ pub trait Store {
     ///
     /// The planner in `crate::bundle::planner` is responsible for
     /// resolving append/merge semantics and pre-building this op.
-    /// Implementations must wrap the writes in a transaction.
+    /// Real transactional stores (e.g. `SqliteStore`) MUST override
+    /// this method and wrap the writes in a single transaction. The
+    /// default implementation here is non-transactional and is suitable
+    /// for `MockStore` and tests only.
     fn apply_bundle_composite(
         &self,
         op: &crate::bundle::BundleApplyOp,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error> {
+        for cd in &op.context_documents {
+            match self.get_context_document(cd.id)? {
+                Some(_) => self.update_context_document(cd)?,
+                None => self.insert_context_document(cd)?,
+            }
+        }
+        for tpl in &op.checklist_templates {
+            match self.get_checklist_template(tpl.id)? {
+                Some(_) => self.update_checklist_template(tpl)?,
+                None => self.insert_checklist_template(tpl)?,
+            }
+        }
+        self.insert_import_run(&op.import_run)?;
+        Ok(())
+    }
 }

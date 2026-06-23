@@ -12,6 +12,7 @@ use crate::model::daily_log::DailyLog;
 use crate::model::day_plan::{PlanItem, PlanItemStatus};
 use crate::model::habit::Habit;
 use crate::model::habit_event::HabitEvent;
+use crate::model::import_run::ImportRun;
 use crate::model::journal_entry::JournalEntry;
 use crate::model::plan::Plan;
 use crate::model::reminder::ReminderDefinition;
@@ -38,6 +39,7 @@ pub struct MockStore {
     alarms: RefCell<HashMap<String, AlarmDefinition>>,
     context_docs: RefCell<HashMap<String, ContextDocument>>,
     action_proposals: RefCell<HashMap<String, ActionProposal>>,
+    import_runs: RefCell<HashMap<String, ImportRun>>,
 }
 
 impl MockStore {
@@ -58,6 +60,7 @@ impl MockStore {
             alarms: RefCell::new(HashMap::new()),
             context_docs: RefCell::new(HashMap::new()),
             action_proposals: RefCell::new(HashMap::new()),
+            import_runs: RefCell::new(HashMap::new()),
         }
     }
 }
@@ -293,6 +296,17 @@ impl Store for MockStore {
             .get(&id.value().to_string())
             .cloned())
     }
+    fn get_context_document_by_source_slug(
+        &self,
+        source_slug: &str,
+    ) -> Result<Option<ContextDocument>, Self::Error> {
+        Ok(self
+            .context_docs
+            .borrow()
+            .values()
+            .find(|cd| cd.source_slug.as_deref() == Some(source_slug))
+            .cloned())
+    }
     fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error> {
         Ok(self.context_docs.borrow().values().cloned().collect())
     }
@@ -477,6 +491,17 @@ impl Store for MockStore {
             .get(&id.value().to_string())
             .cloned())
     }
+    fn get_checklist_template_by_slug(
+        &self,
+        slug: &str,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
+        Ok(self
+            .checklist_templates
+            .borrow()
+            .values()
+            .find(|t| t.slug.as_deref() == Some(slug))
+            .cloned())
+    }
     fn list_checklist_templates_by_category(
         &self,
         category: &str,
@@ -659,5 +684,29 @@ impl Store for MockStore {
         }
         self.insert_journal_entry(journal)?;
         Ok(())
+    }
+
+    // ── ImportRun ──
+    fn insert_import_run(&self, run: &ImportRun) -> Result<(), Self::Error> {
+        self.import_runs
+            .borrow_mut()
+            .insert(run.id.value().to_string(), run.clone());
+        Ok(())
+    }
+    fn get_import_run(&self, id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error> {
+        Ok(self
+            .import_runs
+            .borrow()
+            .get(&id.value().to_string())
+            .cloned())
+    }
+    fn update_import_run(&self, run: &ImportRun) -> Result<(), Self::Error> {
+        self.import_runs
+            .borrow_mut()
+            .insert(run.id.value().to_string(), run.clone());
+        Ok(())
+    }
+    fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error> {
+        Ok(self.import_runs.borrow().values().cloned().collect())
     }
 }

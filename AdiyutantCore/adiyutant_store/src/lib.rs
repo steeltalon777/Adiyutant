@@ -1901,6 +1901,34 @@ impl Store for SqliteStore {
             }
         }
     }
+
+    // ── ImportRun (Stage 0 stub — Unit C will fill in) ──
+    fn insert_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_import_run(&self, _id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error> {
+        Ok(None)
+    }
+    fn update_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error> {
+        Ok(vec![])
+    }
+
+    fn get_checklist_template_by_slug(
+        &self,
+        _slug: &str,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
+        Ok(None)
+    }
+
+    fn get_context_document_by_source_slug(
+        &self,
+        _source_slug: &str,
+    ) -> Result<Option<ContextDocument>, Self::Error> {
+        Ok(None)
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -2000,6 +2028,7 @@ fn row_to_timer(row: &rusqlite::Row<'_>) -> Result<TimerDefinition, CoreError> {
 }
 
 fn row_to_context_document(row: &rusqlite::Row<'_>) -> Result<ContextDocument, CoreError> {
+    let source_slug: Option<String> = row.get(8).ok();
     Ok(ContextDocument {
         id: parse_uuid(row_get::<String>(row, 0)?.as_str())?,
         doc_type: json_from_str(&row_get::<String>(row, 1)?)?,
@@ -2009,6 +2038,7 @@ fn row_to_context_document(row: &rusqlite::Row<'_>) -> Result<ContextDocument, C
         is_active: int_to_bool(row_get::<i64>(row, 5)?),
         created_at: deserialize_datetime(&row_get::<String>(row, 6)?)?,
         updated_at: deserialize_datetime(&row_get::<String>(row, 7)?)?,
+        source_slug,
     })
 }
 
@@ -2105,6 +2135,7 @@ fn row_to_task_checkpoint(row: &rusqlite::Row<'_>) -> Result<TaskCheckpoint, Cor
 
 fn row_to_checklist_template(row: &rusqlite::Row<'_>) -> Result<ChecklistTemplate, CoreError> {
     let items_json: String = row_get(row, 3)?;
+    let slug: Option<String> = row.get(8).ok();
     Ok(ChecklistTemplate {
         id: parse_uuid(&row_get::<String>(row, 0)?)?,
         title: row_get(row, 1)?,
@@ -2114,6 +2145,7 @@ fn row_to_checklist_template(row: &rusqlite::Row<'_>) -> Result<ChecklistTemplat
         is_active: row_get::<i64>(row, 5)? != 0,
         created_at: parse_datetime(&row_get::<String>(row, 6)?)?,
         updated_at: parse_datetime(&row_get::<String>(row, 7)?)?,
+        slug,
     })
 }
 
@@ -2296,6 +2328,12 @@ impl Store for NoopStore {
     ) -> Result<Option<ContextDocument>, Self::Error> {
         Ok(None)
     }
+    fn get_context_document_by_source_slug(
+        &self,
+        _source_slug: &str,
+    ) -> Result<Option<ContextDocument>, Self::Error> {
+        Ok(None)
+    }
     fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error> {
         Ok(vec![])
     }
@@ -2411,6 +2449,12 @@ impl Store for NoopStore {
     fn get_checklist_template(
         &self,
         _id: Id<ChecklistTemplate>,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error> {
+        Ok(None)
+    }
+    fn get_checklist_template_by_slug(
+        &self,
+        _slug: &str,
     ) -> Result<Option<ChecklistTemplate>, Self::Error> {
         Ok(None)
     }
@@ -2545,6 +2589,20 @@ impl Store for NoopStore {
             self.insert_task_checkpoint(next_cp)?;
         }
         self.insert_journal_entry(journal)
+    }
+
+    // ── ImportRun (Noop) ──
+    fn insert_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_import_run(&self, _id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error> {
+        Ok(None)
+    }
+    fn update_import_run(&self, _run: &ImportRun) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error> {
+        Ok(vec![])
     }
 }
 
