@@ -1,3 +1,4 @@
+pub mod bundle;
 pub mod current_activity;
 pub mod datetime;
 pub mod dto;

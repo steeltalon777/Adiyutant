@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct ChecklistTemplate {
     pub id: Id<ChecklistTemplate>,
     pub title: String,
+    /// Stable human/AI-readable identifier used by portable bundle import.
+    /// Optional to keep backward compatibility with pre-8.4A rows.
+    pub slug: Option<String>,
     pub category: String, // morning, day, evening, shutdown, recovery
     pub items: Vec<ChecklistItem>,
     pub version: u32,
@@ -21,6 +24,7 @@ impl ChecklistTemplate {
         Self {
             id: Id::new(),
             title,
+            slug: None,
             category,
             items: vec![],
             version: 1,

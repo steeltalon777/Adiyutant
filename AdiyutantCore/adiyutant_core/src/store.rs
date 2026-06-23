@@ -2,6 +2,7 @@ use crate::id::Id;
 use crate::model::action_proposal::ProposalStatus;
 use crate::model::checklist_template::ChecklistTemplate;
 use crate::model::day_plan::{PlanItem, PlanItemStatus};
+use crate::model::import_run::ImportRun;
 use crate::model::journal_entry::JournalEntry;
 use crate::model::task_checkpoint::TaskCheckpoint;
 use crate::model::*;
@@ -86,6 +87,12 @@ pub trait Store {
         &self,
         id: Id<ContextDocument>,
     ) -> Result<Option<ContextDocument>, Self::Error>;
+    /// Look up a context document by its stable bundle-import source slug.
+    /// Returns `None` if no row with that slug exists.
+    fn get_context_document_by_source_slug(
+        &self,
+        source_slug: &str,
+    ) -> Result<Option<ContextDocument>, Self::Error>;
     fn list_context_documents(&self) -> Result<Vec<ContextDocument>, Self::Error>;
     fn update_context_document(&self, cd: &ContextDocument) -> Result<(), Self::Error>;
     fn delete_context_document(&self, id: Id<ContextDocument>) -> Result<(), Self::Error>;
@@ -148,6 +155,12 @@ pub trait Store {
     fn get_checklist_template(
         &self,
         id: Id<ChecklistTemplate>,
+    ) -> Result<Option<ChecklistTemplate>, Self::Error>;
+    /// Look up a template by its stable bundle-import slug.
+    /// Returns `None` if no row with that slug exists.
+    fn get_checklist_template_by_slug(
+        &self,
+        slug: &str,
     ) -> Result<Option<ChecklistTemplate>, Self::Error>;
     fn list_checklist_templates_by_category(
         &self,
@@ -228,5 +241,31 @@ pub trait Store {
         checkpoint: &TaskCheckpoint,
         next_checkpoint: Option<&TaskCheckpoint>,
         journal: &JournalEntry,
+    ) -> Result<(), Self::Error>;
+
+    // ── ImportRun history (Phase 8.4A) ─────────────────────────────
+
+    /// Insert a new import run record. Used by bundle apply.
+    fn insert_import_run(&self, run: &ImportRun) -> Result<(), Self::Error>;
+    /// Look up a single import run by id.
+    fn get_import_run(&self, id: Id<ImportRun>) -> Result<Option<ImportRun>, Self::Error>;
+    /// Update an import run (e.g. set `finished_at` and `summary_json`).
+    fn update_import_run(&self, run: &ImportRun) -> Result<(), Self::Error>;
+    /// List recent import runs, newest first.
+    fn list_import_runs(&self) -> Result<Vec<ImportRun>, Self::Error>;
+
+    // ── Bundle apply composite (Phase 8.4A, all-or-nothing) ─────────
+
+    /// Apply a fully-planned bundle operation as a single atomic
+    /// transaction. All supported-section writes (context documents,
+    /// checklist templates) and the import-run record are either all
+    /// committed or all rolled back.
+    ///
+    /// The planner in `crate::bundle::planner` is responsible for
+    /// resolving append/merge semantics and pre-building this op.
+    /// Implementations must wrap the writes in a transaction.
+    fn apply_bundle_composite(
+        &self,
+        op: &crate::bundle::BundleApplyOp,
     ) -> Result<(), Self::Error>;
 }

@@ -8,6 +8,7 @@ pub mod daily_log;
 pub mod day_plan;
 pub mod habit;
 pub mod habit_event;
+pub mod import_run;
 pub mod journal_entry;
 pub mod nudge;
 pub mod plan;
@@ -28,6 +29,7 @@ pub use day_plan::{
 };
 pub use habit::Habit;
 pub use habit_event::HabitEvent;
+pub use import_run::{ImportMode, ImportRun, ImportStatus};
 pub use journal_entry::{JournalEntry, JournalEntryType};
 pub use nudge::{NotificationInstructionDto, NudgeSource};
 pub use plan::Plan;

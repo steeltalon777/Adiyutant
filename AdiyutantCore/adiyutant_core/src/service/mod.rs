@@ -1,4 +1,5 @@
 mod basic_entities;
+mod bundle;
 mod checkin;
 mod checklists;
 mod checkpoints;

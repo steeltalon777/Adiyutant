@@ -24,6 +24,9 @@ pub struct ContextDocument {
     pub id: Id<Self>,
     pub doc_type: ContextDocumentType,
     pub title: String,
+    /// Stable source slug used by portable bundle import for merge semantics.
+    /// Optional for backward compatibility with pre-8.4A rows.
+    pub source_slug: Option<String>,
     pub content_markdown: String,
     pub version: u32,
     pub is_active: bool,
@@ -38,6 +41,7 @@ impl ContextDocument {
             id: Id::new(),
             doc_type,
             title,
+            source_slug: None,
             content_markdown,
             version: 1,
             is_active: true,
