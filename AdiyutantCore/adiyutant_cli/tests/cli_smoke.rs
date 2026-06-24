@@ -153,3 +153,108 @@ fn basic_import_flow() {
     assert!(stdout.contains("Bundle is valid"));
     cleanup(&db);
 }
+
+fn test_bundle_path() -> String {
+    EXAMPLE_BUNDLE.to_string()
+}
+
+#[test]
+fn import_then_project_list() {
+    let db = temp_db();
+    let bundle = test_bundle_path();
+
+    let out = adiyutant(&["import", "apply", &bundle, "--mode", "append"], &db);
+    assert!(
+        out.status.success(),
+        "import failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let out = adiyutant(&["project", "list"], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("adiyutant"),
+        "project list should show adiyutant"
+    );
+    assert!(
+        stdout.contains("warehouse"),
+        "project list should show warehouse"
+    );
+
+    cleanup(&db);
+}
+
+#[test]
+fn import_then_project_show() {
+    let db = temp_db();
+    let bundle = test_bundle_path();
+
+    let out = adiyutant(&["import", "apply", &bundle, "--mode", "append"], &db);
+    assert!(out.status.success());
+
+    let out = adiyutant(&["project", "show", "adiyutant"], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Adiyutant"));
+    assert!(stdout.contains("active"));
+
+    cleanup(&db);
+}
+
+#[test]
+fn import_then_roadmap_list() {
+    let db = temp_db();
+    let bundle = test_bundle_path();
+
+    let out = adiyutant(&["import", "apply", &bundle, "--mode", "append"], &db);
+    assert!(out.status.success());
+
+    let out = adiyutant(&["roadmap", "list", "adiyutant"], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("adiyutant-roadmap"));
+
+    cleanup(&db);
+}
+
+#[test]
+fn import_then_roadmap_show() {
+    let db = temp_db();
+    let bundle = test_bundle_path();
+
+    let out = adiyutant(&["import", "apply", &bundle, "--mode", "append"], &db);
+    assert!(out.status.success());
+
+    let out = adiyutant(&["roadmap", "show", "adiyutant-roadmap"], &db);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("MVP"));
+    assert!(stdout.contains("bundle-v1"));
+    assert!(stdout.contains("Android"));
+    assert!(stdout.contains("today-screen"));
+
+    cleanup(&db);
+}
+
+#[test]
+fn import_then_take_item() {
+    let db = temp_db();
+    let bundle = test_bundle_path();
+
+    let out = adiyutant(&["import", "apply", &bundle, "--mode", "append"], &db);
+    assert!(out.status.success(), "import failed");
+
+    let out = adiyutant(
+        &["roadmap", "take-item", "bundle-v1", "--date", "tomorrow"],
+        &db,
+    );
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Bundle v1 contract"));
+    assert!(stdout.contains("Plan item id"));
+    assert!(stdout.contains("Link id"));
+    assert!(stdout.contains("Target date"));
+
+    cleanup(&db);
+}

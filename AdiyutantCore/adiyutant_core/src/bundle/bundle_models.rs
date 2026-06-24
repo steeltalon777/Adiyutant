@@ -140,28 +140,6 @@ pub struct ContextDocEntry {
     pub content: String,
 }
 
-/// Parsed data from a bundle's `projects/<slug>.yaml` (preview-only in 8.4A).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectPreviewSection {
-    pub slug: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub status: Option<String>,
-}
-
-/// Parsed data from a bundle's `roadmaps/<slug>.yaml` (preview-only in 8.4A).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoadmapPreviewSection {
-    pub slug: String,
-    #[serde(default)]
-    pub project_slug: Option<String>,
-    pub title: String,
-    #[serde(default)]
-    pub description: Option<String>,
-}
-
 /// The unified internal representation of an Adiyutant Bundle.
 ///
 /// After parsing, all source forms (directory, zip) produce this single type.
@@ -175,10 +153,8 @@ pub struct AdiyutantBundle {
     pub checklists: Option<ChecklistsSection>,
     pub planning: Option<PlanningSection>,
     pub context_docs: Vec<ContextDocEntry>,
-    /// Preview-only in 8.4A — parsed but not applied.
-    pub projects: Vec<ProjectPreviewSection>,
-    /// Preview-only in 8.4A — parsed but not applied.
-    pub roadmaps: Vec<RoadmapPreviewSection>,
+    pub projects: Vec<BundleProject>,
+    pub roadmaps: Vec<BundleRoadmap>,
     /// Raw file paths present in the bundle but not declared in manifest.
     pub unknown_files: Vec<String>,
 }
@@ -233,6 +209,83 @@ impl SlugLookup for BundleChecklistTemplate {
             .flatten()
             .is_some()
     }
+}
+
+// ── Phase 8.4B: Bundle types for projects/roadmaps (apply/export supported) ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleProject {
+    pub slug: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default = "default_project_status_str")]
+    pub status: String,
+    #[serde(default = "default_priority")]
+    pub priority: u8,
+    #[serde(default)]
+    pub why: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleRoadmap {
+    pub slug: String,
+    pub project_slug: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default = "default_horizon_str")]
+    pub horizon: String,
+    #[serde(default = "default_project_status_str")]
+    pub status: String,
+    #[serde(default)]
+    pub phases: Vec<BundleRoadmapPhase>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleRoadmapPhase {
+    pub slug: String,
+    pub title: String,
+    #[serde(default)]
+    pub order_index: u32,
+    #[serde(default = "default_phase_status_str")]
+    pub status: String,
+    #[serde(default)]
+    pub items: Vec<BundleRoadmapItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleRoadmapItem {
+    pub slug: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default = "default_item_status_str")]
+    pub status: String,
+    #[serde(default = "default_priority")]
+    pub priority: u8,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<String>,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    #[serde(default)]
+    pub links: Vec<String>,
+}
+
+fn default_project_status_str() -> String {
+    "active".to_string()
+}
+fn default_horizon_str() -> String {
+    "month".to_string()
+}
+fn default_phase_status_str() -> String {
+    "planned".to_string()
+}
+fn default_item_status_str() -> String {
+    "planned".to_string()
+}
+fn default_priority() -> u8 {
+    5
 }
 
 impl SlugLookup for ContextDocEntry {

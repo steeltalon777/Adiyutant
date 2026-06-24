@@ -237,6 +237,96 @@ pub struct SuggestionDto {
 
 // ─── helpers ──────────────────────────────────
 
+// ─── Phase 8.4B: Projects/Roadmaps DTOs ──────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectDto {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: u8,
+    pub why: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadmapDto {
+    pub id: String,
+    pub slug: String,
+    pub project_slug: String,
+    pub title: String,
+    pub description: String,
+    pub horizon: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadmapPhaseDto {
+    pub id: String,
+    pub slug: String,
+    pub roadmap_slug: String,
+    pub title: String,
+    pub order_index: u32,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadmapItemDto {
+    pub id: String,
+    pub slug: String,
+    pub phase_slug: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: u8,
+    pub acceptance_criteria: Vec<String>,
+    pub depends_on: Vec<String>,
+    pub links: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadmapPlanLinkDto {
+    pub id: String,
+    pub roadmap_item_id: String,
+    pub plan_item_id: String,
+    pub link_type: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadmapTakeItemResultDto {
+    pub roadmap_item: RoadmapItemDto,
+    pub plan_item: PlanItemDto,
+    pub link: RoadmapPlanLinkDto,
+    pub target_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectDetailDto {
+    pub project: ProjectDto,
+    pub roadmaps: Vec<RoadmapDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadmapPhaseWithItemsDto {
+    pub phase: RoadmapPhaseDto,
+    pub items: Vec<RoadmapItemDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadmapDetailDto {
+    pub roadmap: RoadmapDto,
+    pub project_slug: String,
+    pub phases: Vec<RoadmapPhaseWithItemsDto>,
+}
+
 // ─── Phase 8.4A: Bundle DTOs ────────────────────
 
 pub use crate::bundle::dto::{

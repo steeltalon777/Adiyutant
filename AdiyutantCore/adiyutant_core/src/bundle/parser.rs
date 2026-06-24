@@ -34,11 +34,11 @@ fn parse_directory_bundle(path: &Path) -> CoreResult<AdiyutantBundle> {
         parse_optional_yaml::<ChecklistsSection>(path, manifest.section_path("checklists"))?;
     let planning = parse_optional_yaml::<PlanningSection>(path, manifest.section_path("planning"))?;
 
-    let context_docs = parse_context_docs_dir(path, manifest.section_path("context"))?;
+    let context_docs = parse_context_docs_dir(path, manifest.section_path("context_dir"))?;
     let projects =
-        parse_yaml_files_dir::<ProjectPreviewSection>(path, manifest.section_path("projects"))?;
+        parse_yaml_files_dir::<BundleProject>(path, manifest.section_path("projects_dir"))?;
     let roadmaps =
-        parse_yaml_files_dir::<RoadmapPreviewSection>(path, manifest.section_path("roadmaps"))?;
+        parse_yaml_files_dir::<BundleRoadmap>(path, manifest.section_path("roadmaps_dir"))?;
 
     let unknown_files = find_unknown_files_dir(path, &manifest)?;
 
@@ -123,14 +123,15 @@ fn parse_zip_bundle(bytes: &[u8]) -> CoreResult<AdiyutantBundle> {
     let planning =
         parse_entry_yaml::<PlanningSection>(&entry_map, manifest.section_path("planning"))?;
 
-    let context_docs = parse_context_docs_entries(&entry_map, manifest.section_path("context"))?;
-    let projects = parse_yaml_collection_entries::<ProjectPreviewSection>(
+    let context_docs =
+        parse_context_docs_entries(&entry_map, manifest.section_path("context_dir"))?;
+    let projects = parse_yaml_collection_entries::<BundleProject>(
         &entry_map,
-        manifest.section_path("projects"),
+        manifest.section_path("projects_dir"),
     )?;
-    let roadmaps = parse_yaml_collection_entries::<RoadmapPreviewSection>(
+    let roadmaps = parse_yaml_collection_entries::<BundleRoadmap>(
         &entry_map,
-        manifest.section_path("roadmaps"),
+        manifest.section_path("roadmaps_dir"),
     )?;
 
     let unknown_files = find_unknown_files_entries(&entry_map, &manifest)?;

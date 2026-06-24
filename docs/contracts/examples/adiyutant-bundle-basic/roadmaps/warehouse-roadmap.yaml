@@ -1,6 +1,7 @@
-# preview-only — ignored on apply in 8.4A
+
 slug: "warehouse-roadmap"
 project_slug: "warehouse"
+title: "Warehouse Roadmap"
 phases:
   - slug: "intake"
     title: "Intake"

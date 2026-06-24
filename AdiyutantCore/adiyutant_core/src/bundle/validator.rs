@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::bundle::bundle_models::AdiyutantBundle;
+use crate::bundle::bundle_models::{AdiyutantBundle, BundleRoadmap};
 use crate::bundle::dto::{
     BundleIssueDto, BundleSectionReportDto, BundleStatus, BundleValidationReportDto,
 };
@@ -175,29 +175,60 @@ pub fn validate_bundle(bundle: &AdiyutantBundle) -> CoreResult<BundleValidationR
                 field: Some(format!("projects.{}", proj.slug)),
             });
         }
+        if proj.title.is_empty() {
+            errors.push(BundleIssueDto {
+                severity: "error".into(),
+                section: "projects".into(),
+                code: "missing_field".into(),
+                message: format!("Project '{}' has empty title", proj.slug),
+                field: Some(format!("projects.{}.title", proj.slug)),
+            });
+        }
     }
     sections.push(BundleSectionReportDto {
         section: "projects".into(),
-        status: "preview_only".into(),
+        status: if bundle.projects.is_empty() {
+            "skipped"
+        } else {
+            "ok"
+        }
+        .into(),
         entity_count: bundle.projects.len(),
         actions: vec![],
         issues: vec![],
     });
 
+    // ── roadmaps ──
     for road in &bundle.roadmaps {
-        if !slug_set.insert(road.slug.clone()) {
+        let rm_key = format!("{}::{}", road.project_slug, road.slug);
+        if !slug_set.insert(rm_key.clone()) {
             errors.push(BundleIssueDto {
                 severity: "error".into(),
                 section: "roadmaps".into(),
                 code: "duplicate_slug".into(),
-                message: format!("Duplicate slug in roadmaps: {}", road.slug),
-                field: Some(format!("roadmaps.{}", road.slug)),
+                message: format!("Duplicate roadmap project_slug/slug: {rm_key}"),
+                field: Some(format!("roadmaps.{rm_key}")),
             });
         }
+        if road.title.is_empty() {
+            errors.push(BundleIssueDto {
+                severity: "error".into(),
+                section: "roadmaps".into(),
+                code: "missing_field".into(),
+                message: format!("Roadmap '{}' has empty title", road.slug),
+                field: Some(format!("roadmaps.{}.title", road.slug)),
+            });
+        }
+        validate_roadmap_phases(road, &mut errors);
     }
     sections.push(BundleSectionReportDto {
         section: "roadmaps".into(),
-        status: "preview_only".into(),
+        status: if bundle.roadmaps.is_empty() {
+            "skipped"
+        } else {
+            "ok"
+        }
+        .into(),
         entity_count: bundle.roadmaps.len(),
         actions: vec![],
         issues: vec![],
@@ -213,12 +244,12 @@ pub fn validate_bundle(bundle: &AdiyutantBundle) -> CoreResult<BundleValidationR
         });
     }
 
-    let status = if errors.is_empty() && warnings.is_empty() {
-        BundleStatus::Valid
-    } else if errors.is_empty() {
+    let status = if !errors.is_empty() {
+        BundleStatus::Invalid
+    } else if !warnings.is_empty() {
         BundleStatus::ValidWithWarnings
     } else {
-        BundleStatus::Invalid
+        BundleStatus::Valid
     };
 
     Ok(BundleValidationReportDto {
@@ -230,4 +261,64 @@ pub fn validate_bundle(bundle: &AdiyutantBundle) -> CoreResult<BundleValidationR
         warnings,
         sections,
     })
+}
+
+fn validate_roadmap_phases(roadmap: &BundleRoadmap, errors: &mut Vec<BundleIssueDto>) {
+    // First pass: collect all item slugs across all phases
+    let all_item_slugs: HashSet<String> = roadmap
+        .phases
+        .iter()
+        .flat_map(|ph| ph.items.iter().map(|i| i.slug.clone()))
+        .collect();
+
+    let mut phase_slugs: HashSet<String> = HashSet::new();
+    for phase in &roadmap.phases {
+        if !phase_slugs.insert(phase.slug.clone()) {
+            errors.push(BundleIssueDto {
+                severity: "error".into(),
+                section: "roadmaps".into(),
+                code: "duplicate_slug".into(),
+                message: format!(
+                    "Duplicate phase slug '{}' in roadmap '{}'",
+                    phase.slug, roadmap.slug
+                ),
+                field: Some(format!("roadmaps.{}.phases.{}", roadmap.slug, phase.slug)),
+            });
+        }
+        let mut item_slugs: HashSet<String> = HashSet::new();
+        for item in &phase.items {
+            if !item_slugs.insert(item.slug.clone()) {
+                errors.push(BundleIssueDto {
+                    severity: "error".into(),
+                    section: "roadmaps".into(),
+                    code: "duplicate_slug".into(),
+                    message: format!(
+                        "Duplicate item slug '{}' in phase '{}' of roadmap '{}'",
+                        item.slug, phase.slug, roadmap.slug
+                    ),
+                    field: Some(format!(
+                        "roadmaps.{}.phases.{}.items.{}",
+                        roadmap.slug, phase.slug, item.slug
+                    )),
+                });
+            }
+            for dep in &item.depends_on {
+                if !all_item_slugs.contains(dep) {
+                    errors.push(BundleIssueDto {
+                        severity: "error".into(),
+                        section: "roadmaps".into(),
+                        code: "unresolved_dependency".into(),
+                        message: format!(
+                            "Item '{}' depends on '{}' which does not exist in roadmap '{}'",
+                            item.slug, dep, roadmap.slug
+                        ),
+                        field: Some(format!(
+                            "roadmaps.{}.phases.{}.items.{}.depends_on",
+                            roadmap.slug, phase.slug, item.slug
+                        )),
+                    });
+                }
+            }
+        }
+    }
 }

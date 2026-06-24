@@ -12,7 +12,9 @@ pub mod import_run;
 pub mod journal_entry;
 pub mod nudge;
 pub mod plan;
+pub mod project;
 pub mod reminder;
+pub mod roadmap;
 pub mod task_checkpoint;
 pub mod timer;
 
@@ -33,6 +35,10 @@ pub use import_run::ImportRun;
 pub use journal_entry::{JournalEntry, JournalEntryType};
 pub use nudge::{NotificationInstructionDto, NudgeSource};
 pub use plan::Plan;
+pub use project::Project;
 pub use reminder::ReminderDefinition;
+pub use roadmap::{
+    Roadmap, RoadmapHorizon, RoadmapItem, RoadmapItemStatus, RoadmapPhase, RoadmapPlanLink,
+};
 pub use task_checkpoint::{CheckpointKind, CheckpointResponse, CheckpointStatus, TaskCheckpoint};
 pub use timer::TimerDefinition;

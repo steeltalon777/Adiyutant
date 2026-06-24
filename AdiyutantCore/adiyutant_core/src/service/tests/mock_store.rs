@@ -15,10 +15,13 @@ use crate::model::habit_event::HabitEvent;
 use crate::model::import_run::ImportRun;
 use crate::model::journal_entry::JournalEntry;
 use crate::model::plan::Plan;
+use crate::model::project::Project;
 use crate::model::reminder::ReminderDefinition;
+use crate::model::roadmap::{Roadmap, RoadmapItem, RoadmapPhase, RoadmapPlanLink};
 use crate::model::task_checkpoint::TaskCheckpoint;
 use crate::model::timer::TimerDefinition;
 use crate::store::Store;
+use crate::store::{TakeRoadmapItemInput, TakeRoadmapItemResult};
 use chrono::NaiveDate;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -40,6 +43,11 @@ pub struct MockStore {
     context_docs: RefCell<HashMap<String, ContextDocument>>,
     action_proposals: RefCell<HashMap<String, ActionProposal>>,
     import_runs: RefCell<HashMap<String, ImportRun>>,
+    projects: RefCell<HashMap<String, Project>>,
+    roadmaps: RefCell<HashMap<String, Roadmap>>,
+    roadmap_phases: RefCell<HashMap<String, RoadmapPhase>>,
+    roadmap_items: RefCell<HashMap<String, RoadmapItem>>,
+    roadmap_plan_links: RefCell<HashMap<String, RoadmapPlanLink>>,
 }
 
 impl MockStore {
@@ -61,6 +69,11 @@ impl MockStore {
             context_docs: RefCell::new(HashMap::new()),
             action_proposals: RefCell::new(HashMap::new()),
             import_runs: RefCell::new(HashMap::new()),
+            projects: RefCell::new(HashMap::new()),
+            roadmaps: RefCell::new(HashMap::new()),
+            roadmap_phases: RefCell::new(HashMap::new()),
+            roadmap_items: RefCell::new(HashMap::new()),
+            roadmap_plan_links: RefCell::new(HashMap::new()),
         }
     }
 }
@@ -671,6 +684,202 @@ impl Store for MockStore {
         import_run: &ImportRun,
     ) -> Result<(), Self::Error> {
         self.insert_import_run(import_run)
+    }
+
+    // ── Phase 8.4B: Project/Roadmap MockStore stubs ──
+    fn insert_project(&self, p: &Project) -> Result<(), Self::Error> {
+        self.projects
+            .borrow_mut()
+            .insert(p.id.value().to_string(), p.clone());
+        Ok(())
+    }
+    fn get_project(&self, id: Id<Project>) -> Result<Option<Project>, Self::Error> {
+        Ok(self.projects.borrow().get(&id.value().to_string()).cloned())
+    }
+    fn get_project_by_slug(&self, slug: &str) -> Result<Option<Project>, Self::Error> {
+        Ok(self
+            .projects
+            .borrow()
+            .values()
+            .find(|p| p.slug == slug)
+            .cloned())
+    }
+    fn list_projects(&self) -> Result<Vec<Project>, Self::Error> {
+        Ok(self.projects.borrow().values().cloned().collect())
+    }
+    fn update_project(&self, p: &Project) -> Result<(), Self::Error> {
+        self.projects
+            .borrow_mut()
+            .insert(p.id.value().to_string(), p.clone());
+        Ok(())
+    }
+    fn insert_roadmap(&self, r: &Roadmap) -> Result<(), Self::Error> {
+        self.roadmaps
+            .borrow_mut()
+            .insert(r.id.value().to_string(), r.clone());
+        Ok(())
+    }
+    fn get_roadmap(&self, id: Id<Roadmap>) -> Result<Option<Roadmap>, Self::Error> {
+        Ok(self.roadmaps.borrow().get(&id.value().to_string()).cloned())
+    }
+    fn get_roadmap_by_project_and_slug(
+        &self,
+        project_id: Id<Project>,
+        slug: &str,
+    ) -> Result<Option<Roadmap>, Self::Error> {
+        Ok(self
+            .roadmaps
+            .borrow()
+            .values()
+            .find(|r| r.project_id == project_id && r.slug == slug)
+            .cloned())
+    }
+    fn list_roadmaps(&self) -> Result<Vec<Roadmap>, Self::Error> {
+        Ok(self.roadmaps.borrow().values().cloned().collect())
+    }
+    fn list_roadmaps_by_project(
+        &self,
+        project_id: Id<Project>,
+    ) -> Result<Vec<Roadmap>, Self::Error> {
+        Ok(self
+            .roadmaps
+            .borrow()
+            .values()
+            .filter(|r| r.project_id == project_id)
+            .cloned()
+            .collect())
+    }
+    fn update_roadmap(&self, r: &Roadmap) -> Result<(), Self::Error> {
+        self.roadmaps
+            .borrow_mut()
+            .insert(r.id.value().to_string(), r.clone());
+        Ok(())
+    }
+    fn insert_roadmap_phase(&self, p: &RoadmapPhase) -> Result<(), Self::Error> {
+        self.roadmap_phases
+            .borrow_mut()
+            .insert(p.id.value().to_string(), p.clone());
+        Ok(())
+    }
+    fn get_roadmap_phase(&self, id: Id<RoadmapPhase>) -> Result<Option<RoadmapPhase>, Self::Error> {
+        Ok(self
+            .roadmap_phases
+            .borrow()
+            .get(&id.value().to_string())
+            .cloned())
+    }
+    fn list_roadmap_phases(
+        &self,
+        roadmap_id: Id<Roadmap>,
+    ) -> Result<Vec<RoadmapPhase>, Self::Error> {
+        Ok(self
+            .roadmap_phases
+            .borrow()
+            .values()
+            .filter(|p| p.roadmap_id == roadmap_id)
+            .cloned()
+            .collect())
+    }
+    fn list_all_roadmap_phases(&self) -> Result<Vec<RoadmapPhase>, Self::Error> {
+        Ok(self.roadmap_phases.borrow().values().cloned().collect())
+    }
+    fn update_roadmap_phase(&self, p: &RoadmapPhase) -> Result<(), Self::Error> {
+        self.roadmap_phases
+            .borrow_mut()
+            .insert(p.id.value().to_string(), p.clone());
+        Ok(())
+    }
+    fn insert_roadmap_item(&self, i: &RoadmapItem) -> Result<(), Self::Error> {
+        self.roadmap_items
+            .borrow_mut()
+            .insert(i.id.value().to_string(), i.clone());
+        Ok(())
+    }
+    fn get_roadmap_item(&self, id: Id<RoadmapItem>) -> Result<Option<RoadmapItem>, Self::Error> {
+        Ok(self
+            .roadmap_items
+            .borrow()
+            .get(&id.value().to_string())
+            .cloned())
+    }
+    fn list_roadmap_items(
+        &self,
+        phase_id: Id<RoadmapPhase>,
+    ) -> Result<Vec<RoadmapItem>, Self::Error> {
+        Ok(self
+            .roadmap_items
+            .borrow()
+            .values()
+            .filter(|i| i.phase_id == phase_id)
+            .cloned()
+            .collect())
+    }
+    fn list_all_roadmap_items(&self) -> Result<Vec<RoadmapItem>, Self::Error> {
+        Ok(self.roadmap_items.borrow().values().cloned().collect())
+    }
+    fn update_roadmap_item(&self, i: &RoadmapItem) -> Result<(), Self::Error> {
+        self.roadmap_items
+            .borrow_mut()
+            .insert(i.id.value().to_string(), i.clone());
+        Ok(())
+    }
+    fn insert_roadmap_plan_link(&self, link: &RoadmapPlanLink) -> Result<(), Self::Error> {
+        self.roadmap_plan_links
+            .borrow_mut()
+            .insert(link.id.value().to_string(), link.clone());
+        Ok(())
+    }
+    fn get_roadmap_plan_link(
+        &self,
+        id: Id<RoadmapPlanLink>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error> {
+        Ok(self
+            .roadmap_plan_links
+            .borrow()
+            .get(&id.value().to_string())
+            .cloned())
+    }
+    fn list_roadmap_plan_links_by_roadmap_item(
+        &self,
+        roadmap_item_id: Id<RoadmapItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error> {
+        Ok(self
+            .roadmap_plan_links
+            .borrow()
+            .values()
+            .filter(|l| l.roadmap_item_id == roadmap_item_id)
+            .cloned()
+            .collect())
+    }
+    fn list_roadmap_plan_links_by_plan_item(
+        &self,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error> {
+        Ok(self
+            .roadmap_plan_links
+            .borrow()
+            .values()
+            .filter(|l| l.plan_item_id == plan_item_id)
+            .cloned()
+            .collect())
+    }
+    fn find_roadmap_plan_link(
+        &self,
+        roadmap_item_id: Id<RoadmapItem>,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error> {
+        Ok(self
+            .roadmap_plan_links
+            .borrow()
+            .values()
+            .find(|l| l.roadmap_item_id == roadmap_item_id && l.plan_item_id == plan_item_id)
+            .cloned())
+    }
+    fn take_roadmap_item_composite(
+        &self,
+        _input: TakeRoadmapItemInput,
+    ) -> Result<TakeRoadmapItemResult, Self::Error> {
+        todo!("take_roadmap_item_composite: Unit B implementation")
     }
 
     // ── ImportRun ──

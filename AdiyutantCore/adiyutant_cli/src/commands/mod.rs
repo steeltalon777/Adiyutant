@@ -6,6 +6,8 @@ pub mod habit;
 pub mod import_cmd;
 pub mod journal;
 pub mod plan;
+pub mod project;
+pub mod roadmap;
 pub mod suggest;
 pub mod time;
 pub mod waiting;

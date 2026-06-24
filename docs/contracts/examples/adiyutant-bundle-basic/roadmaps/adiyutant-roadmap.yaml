@@ -1,6 +1,7 @@
-# preview-only — ignored on apply in 8.4A
+
 slug: "adiyutant-roadmap"
 project_slug: "adiyutant"
+title: "Adiyutant Roadmap"
 phases:
   - slug: "mvp"
     title: "MVP"

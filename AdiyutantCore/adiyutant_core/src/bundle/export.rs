@@ -7,6 +7,8 @@ use crate::datetime::AdiyutantDateTime;
 use crate::error::{CoreError, CoreResult};
 use crate::model::checklist_template::ChecklistTemplate;
 use crate::model::context_document::{ContextDocument, ContextDocumentType};
+use crate::model::project::Project;
+use crate::model::roadmap::Roadmap;
 use crate::store::Store;
 
 /// Export supported sections from the store into a bundle directory or zip archive.
@@ -44,6 +46,28 @@ pub fn export_bundle(
         vec![]
     });
 
+    let projects = store.list_projects().unwrap_or_else(|e| {
+        warnings.push(BundleIssueDto {
+            severity: "warning".into(),
+            section: "projects".into(),
+            code: "read_failed".into(),
+            message: format!("Failed to list projects: {e}"),
+            field: None,
+        });
+        vec![]
+    });
+
+    let roadmaps = store.list_roadmaps().unwrap_or_else(|e| {
+        warnings.push(BundleIssueDto {
+            severity: "warning".into(),
+            section: "roadmaps".into(),
+            code: "read_failed".into(),
+            message: format!("Failed to list roadmaps: {e}"),
+            field: None,
+        });
+        vec![]
+    });
+
     // ── Build manifest ──
     let manifest = Manifest {
         schema_version: BUNDLE_SCHEMA_VERSION.to_string(),
@@ -51,8 +75,8 @@ pub fn export_bundle(
         title: format!("Adiyutant Export {}", now.inner().format("%Y-%m-%d")),
         created_at: created_at.clone(),
         capabilities: [
-            ("projects".into(), "preview-only".into()),
-            ("roadmaps".into(), "preview-only".into()),
+            ("projects".into(), "apply-export".into()),
+            ("roadmaps".into(), "apply-export".into()),
         ]
         .into(),
         sections: [
@@ -61,6 +85,8 @@ pub fn export_bundle(
             ("rules".into(), "rules.yaml".into()),
             ("checklists".into(), "checklists.yaml".into()),
             ("planning".into(), "planning.yaml".into()),
+            ("projects".into(), "projects/".into()),
+            ("roadmaps".into(), "roadmaps/".into()),
         ]
         .into(),
     };
@@ -74,6 +100,8 @@ pub fn export_bundle(
     let rules_yaml = build_rules_yaml(&context_docs);
     let checklists_yaml = build_checklists_yaml(&checklist_templates);
     let planning_yaml = build_planning_yaml();
+    let projects_yaml = build_projects_yaml(&projects);
+    let roadmaps_yaml = build_roadmaps_yaml(&roadmaps, store);
 
     // ── Write bundle ──
     let is_zip = target.extension().map(|ext| ext == "zip").unwrap_or(false);
@@ -88,6 +116,8 @@ pub fn export_bundle(
             &checklists_yaml,
             &planning_yaml,
             &context_docs,
+            &projects_yaml,
+            &roadmaps_yaml,
         )?;
     } else {
         write_directory(
@@ -99,11 +129,15 @@ pub fn export_bundle(
             &checklists_yaml,
             &planning_yaml,
             &context_docs,
+            &projects_yaml,
+            &roadmaps_yaml,
         )?;
     }
 
     let section_count = if context_docs.is_empty() { 0usize } else { 1 }
         + if checklist_templates.is_empty() { 0 } else { 1 }
+        + if projects.is_empty() { 0 } else { 1 }
+        + if roadmaps.is_empty() { 0 } else { 1 }
         + 3; // routines, rules, planning always present
 
     Ok(BundleExportReportDto {
@@ -239,6 +273,87 @@ fn build_planning_yaml() -> String {
     serde_yaml::to_string(&yaml_value).unwrap_or_else(|_| "default_mode: light\ndaily_capacity:\n  deep_tasks_max: 3\n  light_tasks_max: 5\ntemplates: []\ncandidate_hints: []\n".into())
 }
 
+fn build_projects_yaml(projects: &[Project]) -> Vec<(String, String)> {
+    projects
+        .iter()
+        .map(|p| {
+            let yaml_value = serde_json::json!({
+                "slug": p.slug,
+                "title": p.title,
+                "description": p.description,
+                "status": p.status.as_str(),
+                "priority": p.priority,
+                "why": p.why,
+            });
+            let yaml = serde_yaml::to_string(&yaml_value)
+                .unwrap_or_else(|_| format!("slug: {}\ntitle: {}\n", p.slug, p.title));
+            (p.slug.clone(), yaml)
+        })
+        .collect()
+}
+
+fn build_roadmaps_yaml(
+    roadmaps: &[Roadmap],
+    store: &dyn Store<Error = CoreError>,
+) -> Vec<(String, String)> {
+    roadmaps
+        .iter()
+        .map(|r| {
+            let project_slug = store
+                .get_project(r.project_id)
+                .ok()
+                .flatten()
+                .map(|proj| proj.slug)
+                .unwrap_or_default();
+            let phases = store.list_roadmap_phases(r.id).unwrap_or_default();
+            let bundle_phases: Vec<serde_json::Value> = phases
+                .iter()
+                .map(|ph| {
+                    let items = store.list_roadmap_items(ph.id).unwrap_or_default();
+                    let bundle_items: Vec<serde_json::Value> = items
+                        .iter()
+                        .map(|i| {
+                            serde_json::json!({
+                                "slug": i.slug,
+                                "title": i.title,
+                                "description": i.description,
+                                "status": i.status.as_str(),
+                                "priority": i.priority,
+                                "acceptance_criteria": i.acceptance_criteria,
+                                "depends_on": i.depends_on,
+                                "links": i.links,
+                            })
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "slug": ph.slug,
+                        "title": ph.title,
+                        "order_index": ph.order_index,
+                        "status": ph.status.as_str(),
+                        "items": bundle_items,
+                    })
+                })
+                .collect();
+            let yaml_value = serde_json::json!({
+                "slug": r.slug,
+                "project_slug": project_slug,
+                "title": r.title,
+                "description": r.description,
+                "horizon": r.horizon.as_str(),
+                "status": r.status.as_str(),
+                "phases": bundle_phases,
+            });
+            let yaml = serde_yaml::to_string(&yaml_value).unwrap_or_else(|_| {
+                format!(
+                    "slug: {}\ntitle: {}\nproject_slug: {}\n",
+                    r.slug, r.title, project_slug
+                )
+            });
+            (r.slug.clone(), yaml)
+        })
+        .collect()
+}
+
 // ── File writers ──
 
 #[allow(clippy::too_many_arguments)]
@@ -251,6 +366,8 @@ fn write_directory(
     checklists_yaml: &str,
     planning_yaml: &str,
     context_docs: &[ContextDocument],
+    projects_yaml: &[(String, String)],
+    roadmaps_yaml: &[(String, String)],
 ) -> Result<(), CoreError> {
     std::fs::create_dir_all(base)
         .map_err(|e| CoreError::Storage(format!("Cannot create target dir: {e}")))?;
@@ -270,6 +387,24 @@ fn write_directory(
         write_file_content(&path, &doc.content_markdown)?;
     }
 
+    if !projects_yaml.is_empty() {
+        std::fs::create_dir_all(base.join("projects"))
+            .map_err(|e| CoreError::Storage(format!("Cannot create projects dir: {e}")))?;
+        for (slug, yaml) in projects_yaml {
+            let path = base.join("projects").join(format!("{slug}.yaml"));
+            write_file_content(&path, yaml)?;
+        }
+    }
+
+    if !roadmaps_yaml.is_empty() {
+        std::fs::create_dir_all(base.join("roadmaps"))
+            .map_err(|e| CoreError::Storage(format!("Cannot create roadmaps dir: {e}")))?;
+        for (slug, yaml) in roadmaps_yaml {
+            let path = base.join("roadmaps").join(format!("{slug}.yaml"));
+            write_file_content(&path, yaml)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -283,6 +418,8 @@ fn write_zip(
     checklists_yaml: &str,
     planning_yaml: &str,
     context_docs: &[ContextDocument],
+    projects_yaml: &[(String, String)],
+    roadmaps_yaml: &[(String, String)],
 ) -> Result<(), CoreError> {
     let file = std::fs::File::create(target)
         .map_err(|e| CoreError::Storage(format!("Cannot create zip file: {e}")))?;
@@ -330,6 +467,16 @@ fn write_zip(
             doc.content_markdown.as_bytes(),
             &options,
         )?;
+    }
+
+    for (slug, yaml) in projects_yaml {
+        let path = format!("projects/{slug}.yaml");
+        add_to_zip(&mut zip, &path, yaml.as_bytes(), &options)?;
+    }
+
+    for (slug, yaml) in roadmaps_yaml {
+        let path = format!("roadmaps/{slug}.yaml");
+        add_to_zip(&mut zip, &path, yaml.as_bytes(), &options)?;
     }
 
     zip.finish()

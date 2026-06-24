@@ -1,5 +1,6 @@
 use crate::bundle::bundle_models::{
-    AdiyutantBundle, BundleChecklistTemplate, ContextDocEntry, ImportMode, RoutineEntry, RuleEntry,
+    AdiyutantBundle, BundleChecklistTemplate, BundleProject, BundleRoadmap, ContextDocEntry,
+    ImportMode, RoutineEntry, RuleEntry,
 };
 use crate::bundle::dto::{
     BundleActionDto, BundleActionKind, BundleIssueDto, BundlePreviewDto, BundleSectionReportDto,
@@ -138,49 +139,37 @@ pub fn compute_import_plan(
         issues: section_issues(&validation, "context"),
     });
 
-    // ── projects (preview-only) ──
-    if !bundle.projects.is_empty() {
-        let actions: Vec<BundleActionDto> = bundle
-            .projects
-            .iter()
-            .map(|p| BundleActionDto {
-                kind: BundleActionKind::IgnoredPreviewOnly,
-                section: "projects".into(),
-                entity_identifier: p.slug.clone(),
-                message: format!("Project '{}' is preview-only in this version", p.name),
-            })
-            .collect();
-        all_actions.extend(actions.clone());
-        section_reports.push(BundleSectionReportDto {
-            section: "projects".into(),
-            status: "preview_only".into(),
-            entity_count: actions.len(),
-            actions,
-            issues: vec![],
-        });
-    }
+    // ── projects ──
+    let project_actions = plan_projects(&bundle.projects, mode, store);
+    all_actions.extend(project_actions.iter().cloned());
+    section_reports.push(BundleSectionReportDto {
+        section: "projects".into(),
+        status: if project_actions.is_empty() {
+            "skipped"
+        } else {
+            "ok"
+        }
+        .into(),
+        entity_count: project_actions.len(),
+        actions: project_actions,
+        issues: section_issues(&validation, "projects"),
+    });
 
-    // ── roadmaps (preview-only) ──
-    if !bundle.roadmaps.is_empty() {
-        let actions: Vec<BundleActionDto> = bundle
-            .roadmaps
-            .iter()
-            .map(|r| BundleActionDto {
-                kind: BundleActionKind::IgnoredPreviewOnly,
-                section: "roadmaps".into(),
-                entity_identifier: r.slug.clone(),
-                message: format!("Roadmap '{}' is preview-only in this version", r.title),
-            })
-            .collect();
-        all_actions.extend(actions.clone());
-        section_reports.push(BundleSectionReportDto {
-            section: "roadmaps".into(),
-            status: "preview_only".into(),
-            entity_count: actions.len(),
-            actions,
-            issues: vec![],
-        });
-    }
+    // ── roadmaps ──
+    let roadmap_actions = plan_roadmaps(&bundle.roadmaps, mode, store);
+    all_actions.extend(roadmap_actions.iter().cloned());
+    section_reports.push(BundleSectionReportDto {
+        section: "roadmaps".into(),
+        status: if roadmap_actions.is_empty() {
+            "skipped"
+        } else {
+            "ok"
+        }
+        .into(),
+        entity_count: roadmap_actions.len(),
+        actions: roadmap_actions,
+        issues: section_issues(&validation, "roadmaps"),
+    });
 
     let has_errors = all_actions
         .iter()
@@ -306,6 +295,43 @@ fn plan_context_docs(
             make_action(exists, mode, "context", ident)
         })
         .collect()
+}
+
+fn plan_projects(
+    items: &[BundleProject],
+    mode: ImportMode,
+    store: &dyn Store<Error = crate::error::CoreError>,
+) -> Vec<BundleActionDto> {
+    items
+        .iter()
+        .map(|bp| {
+            let exists = store.get_project_by_slug(&bp.slug).ok().flatten().is_some();
+            make_action(exists, mode, "projects", &bp.slug)
+        })
+        .collect()
+}
+
+fn plan_roadmaps(
+    items: &[BundleRoadmap],
+    mode: ImportMode,
+    store: &dyn Store<Error = crate::error::CoreError>,
+) -> Vec<BundleActionDto> {
+    let mut actions = Vec::new();
+    for br in items {
+        let ident = format!("{}/{}", br.project_slug, br.slug);
+        let project = store.get_project_by_slug(&br.project_slug).ok().flatten();
+        let road_exists = project
+            .as_ref()
+            .and_then(|proj| {
+                store
+                    .get_roadmap_by_project_and_slug(proj.id, &br.slug)
+                    .ok()
+                    .flatten()
+            })
+            .is_some();
+        actions.push(make_action(road_exists, mode, "roadmaps", &ident));
+    }
+    actions
 }
 
 fn section_issues(v: &BundleValidationReportDto, section: &str) -> Vec<BundleIssueDto> {

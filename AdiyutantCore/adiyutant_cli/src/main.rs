@@ -11,6 +11,8 @@ use crate::commands::habit::{self, HabitCmd};
 use crate::commands::import_cmd::{self, ImportCmd};
 use crate::commands::journal::{self, JournalCmd};
 use crate::commands::plan::{self, PlanCmd};
+use crate::commands::project as project_cmd;
+use crate::commands::roadmap as roadmap_cmd;
 use crate::commands::suggest;
 use crate::commands::time::{self, AlarmCmd, ReminderCmd, TimerCmd};
 use crate::commands::waiting::{self, WaitingCmd};
@@ -83,6 +85,12 @@ enum Commands {
         #[command(subcommand)]
         cmd: WaitingCmd,
     },
+    /// Manage projects
+    #[command(subcommand)]
+    Project(ProjectCmd),
+    /// Manage roadmaps
+    #[command(subcommand)]
+    Roadmap(RoadmapCmd),
     /// Bundle import commands
     Import {
         #[command(subcommand)]
@@ -92,6 +100,35 @@ enum Commands {
     Export {
         #[command(subcommand)]
         cmd: ExportCmd,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ProjectCmd {
+    /// List all projects
+    List,
+    /// Show project details
+    Show { slug: String },
+}
+
+#[derive(clap::Subcommand)]
+enum RoadmapCmd {
+    /// List roadmaps, optionally filtered by project
+    List {
+        /// Project slug to filter by
+        project_slug: Option<String>,
+    },
+    /// Show roadmap with phases and items
+    Show { selector: String },
+    /// List roadmap items
+    Items { selector: String },
+    /// Take a roadmap item into a day plan
+    TakeItem {
+        /// Item slug or selector (phase/item or roadmap/phase/item)
+        selector: String,
+        /// Target date: "today" or "tomorrow"
+        #[arg(long, default_value = "today")]
+        date: String,
     },
 }
 
@@ -207,6 +244,28 @@ fn main() {
             let store = init_store_or_exit();
             let facade = build_facade(store);
             export_cmd::handle_export(&facade, cmd);
+        }
+        Commands::Project(cmd) => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            match cmd {
+                ProjectCmd::List => project_cmd::handle_list(&facade),
+                ProjectCmd::Show { slug } => project_cmd::handle_show(&facade, slug),
+            }
+        }
+        Commands::Roadmap(cmd) => {
+            let store = init_store_or_exit();
+            let facade = build_facade(store);
+            match cmd {
+                RoadmapCmd::List { project_slug } => {
+                    roadmap_cmd::handle_list(&facade, project_slug)
+                }
+                RoadmapCmd::Show { selector } => roadmap_cmd::handle_show(&facade, selector),
+                RoadmapCmd::Items { selector } => roadmap_cmd::handle_items(&facade, selector),
+                RoadmapCmd::TakeItem { selector, date } => {
+                    roadmap_cmd::handle_take_item(&facade, selector, date)
+                }
+            }
         }
     }
 }

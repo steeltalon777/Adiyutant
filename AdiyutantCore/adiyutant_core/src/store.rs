@@ -4,6 +4,8 @@ use crate::model::checklist_template::ChecklistTemplate;
 use crate::model::day_plan::{PlanItem, PlanItemStatus};
 use crate::model::import_run::ImportRun;
 use crate::model::journal_entry::JournalEntry;
+use crate::model::project::Project;
+use crate::model::roadmap::{Roadmap, RoadmapItem, RoadmapPhase, RoadmapPlanLink};
 use crate::model::task_checkpoint::TaskCheckpoint;
 use crate::model::*;
 use chrono::NaiveDate;
@@ -254,4 +256,91 @@ pub trait Store {
         mode: crate::bundle::bundle_models::ImportMode,
         import_run: &ImportRun,
     ) -> Result<(), Self::Error>;
+
+    // ── Project ──
+    fn insert_project(&self, p: &Project) -> Result<(), Self::Error>;
+    fn get_project(&self, id: Id<Project>) -> Result<Option<Project>, Self::Error>;
+    fn get_project_by_slug(&self, slug: &str) -> Result<Option<Project>, Self::Error>;
+    fn list_projects(&self) -> Result<Vec<Project>, Self::Error>;
+    fn update_project(&self, p: &Project) -> Result<(), Self::Error>;
+
+    // ── Roadmap ──
+    fn insert_roadmap(&self, r: &Roadmap) -> Result<(), Self::Error>;
+    fn get_roadmap(&self, id: Id<Roadmap>) -> Result<Option<Roadmap>, Self::Error>;
+    fn get_roadmap_by_project_and_slug(
+        &self,
+        project_id: Id<Project>,
+        slug: &str,
+    ) -> Result<Option<Roadmap>, Self::Error>;
+    fn list_roadmaps(&self) -> Result<Vec<Roadmap>, Self::Error>;
+    fn list_roadmaps_by_project(
+        &self,
+        project_id: Id<Project>,
+    ) -> Result<Vec<Roadmap>, Self::Error>;
+    fn update_roadmap(&self, r: &Roadmap) -> Result<(), Self::Error>;
+
+    // ── RoadmapPhase ──
+    fn insert_roadmap_phase(&self, p: &RoadmapPhase) -> Result<(), Self::Error>;
+    fn get_roadmap_phase(&self, id: Id<RoadmapPhase>) -> Result<Option<RoadmapPhase>, Self::Error>;
+    fn list_roadmap_phases(
+        &self,
+        roadmap_id: Id<Roadmap>,
+    ) -> Result<Vec<RoadmapPhase>, Self::Error>;
+    fn list_all_roadmap_phases(&self) -> Result<Vec<RoadmapPhase>, Self::Error>;
+    fn update_roadmap_phase(&self, p: &RoadmapPhase) -> Result<(), Self::Error>;
+
+    // ── RoadmapItem ──
+    fn insert_roadmap_item(&self, i: &RoadmapItem) -> Result<(), Self::Error>;
+    fn get_roadmap_item(&self, id: Id<RoadmapItem>) -> Result<Option<RoadmapItem>, Self::Error>;
+    fn list_roadmap_items(
+        &self,
+        phase_id: Id<RoadmapPhase>,
+    ) -> Result<Vec<RoadmapItem>, Self::Error>;
+    fn list_all_roadmap_items(&self) -> Result<Vec<RoadmapItem>, Self::Error>;
+    fn update_roadmap_item(&self, i: &RoadmapItem) -> Result<(), Self::Error>;
+
+    // ── RoadmapPlanLink ──
+    fn insert_roadmap_plan_link(&self, link: &RoadmapPlanLink) -> Result<(), Self::Error>;
+    fn get_roadmap_plan_link(
+        &self,
+        id: Id<RoadmapPlanLink>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error>;
+    fn list_roadmap_plan_links_by_roadmap_item(
+        &self,
+        roadmap_item_id: Id<RoadmapItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error>;
+    fn list_roadmap_plan_links_by_plan_item(
+        &self,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error>;
+    fn find_roadmap_plan_link(
+        &self,
+        roadmap_item_id: Id<RoadmapItem>,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error>;
+
+    // ── Take-item composite ──
+    fn take_roadmap_item_composite(
+        &self,
+        input: crate::store::TakeRoadmapItemInput,
+    ) -> Result<crate::store::TakeRoadmapItemResult, Self::Error>;
+}
+
+/// Composite input for `take_roadmap_item_composite`.
+pub struct TakeRoadmapItemInput {
+    pub roadmap_item_id: Id<RoadmapItem>,
+    pub target_date: chrono::NaiveDate,
+    pub daily_log_to_create: Option<DailyLog>,
+    pub plan_item: PlanItem,
+    pub initial_checkpoint: TaskCheckpoint,
+    pub link: RoadmapPlanLink,
+    /// If true and current item status is Planned, transition to Active.
+    pub activate_item: bool,
+}
+
+pub struct TakeRoadmapItemResult {
+    pub plan_item_id: Id<PlanItem>,
+    pub link_id: Id<RoadmapPlanLink>,
+    pub plan_item_reused: bool,
+    pub link_reused: bool,
 }

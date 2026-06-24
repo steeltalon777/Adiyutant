@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crate::bundle::bundle_models::BundleChecklistTemplate;
 use crate::bundle::bundle_models::ImportMode;
 use crate::bundle::bundle_models::{
-    AdiyutantBundle, ChecklistsSection, LifeCoreContextDoc, LifeCoreSection, PlanningSection,
-    RoutineEntry, RoutinesSection,
+    AdiyutantBundle, BundleProject, BundleRoadmap, BundleRoadmapItem, BundleRoadmapPhase,
+    ChecklistsSection, LifeCoreContextDoc, LifeCoreSection, PlanningSection, RoutineEntry,
+    RoutinesSection,
 };
 use crate::bundle::dto::BundleActionKind;
 use crate::bundle::export::export_bundle;
@@ -16,6 +17,8 @@ use crate::bundle::security::{
 use crate::bundle::validator::validate_bundle;
 use crate::model::checklist_template::ChecklistTemplate;
 use crate::model::context_document::{ContextDocument, ContextDocumentType};
+use crate::model::project::Project;
+use crate::model::roadmap::{Roadmap, RoadmapItem, RoadmapPhase};
 use crate::service::tests::mock_store::MockStore;
 use crate::store::Store;
 
@@ -692,6 +695,242 @@ fn test_export_section_files_exist() {
             "expected {expected} to exist after export"
         );
     }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ================================================================
+// 9. Project planning tests
+// ================================================================
+
+#[test]
+fn test_parse_and_plan_projects() {
+    let store = MockStore::new();
+    let manifest = valid_manifest();
+    let bundle = AdiyutantBundle {
+        manifest,
+        life_core: None,
+        routines: None,
+        rules: None,
+        checklists: None,
+        planning: None,
+        context_docs: vec![],
+        projects: vec![
+            BundleProject {
+                slug: "proj-1".into(),
+                title: "Project 1".into(),
+                description: Some("First project".into()),
+                status: "active".into(),
+                priority: 5,
+                why: None,
+            },
+            BundleProject {
+                slug: "proj-2".into(),
+                title: "Project 2".into(),
+                description: None,
+                status: "active".into(),
+                priority: 3,
+                why: Some("Important".into()),
+            },
+        ],
+        roadmaps: vec![],
+        unknown_files: vec![],
+    };
+
+    let plan = compute_import_plan(&bundle, ImportMode::Append, &store).unwrap();
+    let create_actions: Vec<_> = plan
+        .actions
+        .iter()
+        .filter(|a| a.kind == BundleActionKind::Create)
+        .collect();
+    assert_eq!(
+        create_actions.len(),
+        2,
+        "expected 2 create actions for 2 new projects"
+    );
+
+    let project_actions: Vec<_> = plan
+        .actions
+        .iter()
+        .filter(|a| a.section == "projects")
+        .collect();
+    assert_eq!(project_actions.len(), 2);
+}
+
+// ================================================================
+// 10. Roadmap dependency validation tests
+// ================================================================
+
+#[test]
+fn test_roadmap_dependency_validation() {
+    let manifest = valid_manifest();
+
+    // Good case: cross-phase dependency exists
+    let bundle_ok = AdiyutantBundle {
+        manifest: manifest.clone(),
+        life_core: None,
+        routines: None,
+        rules: None,
+        checklists: None,
+        planning: None,
+        context_docs: vec![],
+        projects: vec![],
+        roadmaps: vec![BundleRoadmap {
+            slug: "rm-1".into(),
+            project_slug: "proj-1".into(),
+            title: "Roadmap 1".into(),
+            description: None,
+            horizon: "month".into(),
+            status: "active".into(),
+            phases: vec![
+                BundleRoadmapPhase {
+                    slug: "phase-1".into(),
+                    title: "Phase 1".into(),
+                    order_index: 0,
+                    status: "planned".into(),
+                    items: vec![BundleRoadmapItem {
+                        slug: "item-a".into(),
+                        title: "Item A".into(),
+                        description: None,
+                        status: "planned".into(),
+                        priority: 5,
+                        acceptance_criteria: vec![],
+                        depends_on: vec!["item-b".into()],
+                        links: vec![],
+                    }],
+                },
+                BundleRoadmapPhase {
+                    slug: "phase-2".into(),
+                    title: "Phase 2".into(),
+                    order_index: 1,
+                    status: "planned".into(),
+                    items: vec![BundleRoadmapItem {
+                        slug: "item-b".into(),
+                        title: "Item B".into(),
+                        description: None,
+                        status: "planned".into(),
+                        priority: 5,
+                        acceptance_criteria: vec![],
+                        depends_on: vec![],
+                        links: vec![],
+                    }],
+                },
+            ],
+        }],
+        unknown_files: vec![],
+    };
+
+    let report_ok = validate_bundle(&bundle_ok).unwrap();
+    let dep_errors_ok: Vec<_> = report_ok
+        .errors
+        .iter()
+        .filter(|e| e.code == "unresolved_dependency")
+        .collect();
+    assert_eq!(
+        dep_errors_ok.len(),
+        0,
+        "expected no unresolved dependency for valid cross-phase dep"
+    );
+
+    // Bad case: dependency does not exist at all
+    let bundle_bad = AdiyutantBundle {
+        manifest,
+        life_core: None,
+        routines: None,
+        rules: None,
+        checklists: None,
+        planning: None,
+        context_docs: vec![],
+        projects: vec![],
+        roadmaps: vec![BundleRoadmap {
+            slug: "rm-2".into(),
+            project_slug: "proj-1".into(),
+            title: "Roadmap 2".into(),
+            description: None,
+            horizon: "month".into(),
+            status: "active".into(),
+            phases: vec![BundleRoadmapPhase {
+                slug: "phase-1".into(),
+                title: "Phase 1".into(),
+                order_index: 0,
+                status: "planned".into(),
+                items: vec![BundleRoadmapItem {
+                    slug: "item-x".into(),
+                    title: "Item X".into(),
+                    description: None,
+                    status: "planned".into(),
+                    priority: 5,
+                    acceptance_criteria: vec![],
+                    depends_on: vec!["nonexistent".into()],
+                    links: vec![],
+                }],
+            }],
+        }],
+        unknown_files: vec![],
+    };
+
+    let report_bad = validate_bundle(&bundle_bad).unwrap();
+    let dep_errors_bad: Vec<_> = report_bad
+        .errors
+        .iter()
+        .filter(|e| e.code == "unresolved_dependency")
+        .collect();
+    assert_eq!(
+        dep_errors_bad.len(),
+        1,
+        "expected 1 unresolved dependency for bad dep"
+    );
+}
+
+// ================================================================
+// 11. Export includes projects and roadmaps
+// ================================================================
+
+#[test]
+fn test_bundle_export_includes_projects_roadmaps() {
+    let store = MockStore::new();
+
+    let mut project = Project::new("test-proj".into(), "Test Project".into());
+    project.description = Some("A test project".into());
+    project.priority = 3;
+    store.insert_project(&project).unwrap();
+
+    let mut roadmap = Roadmap::new("test-rm".into(), project.id, "Test Roadmap".into());
+    roadmap.description = Some("A test roadmap".into());
+    store.insert_roadmap(&roadmap).unwrap();
+
+    let phase = RoadmapPhase::new("phase-1".into(), roadmap.id, "Phase 1".into(), 0);
+    store.insert_roadmap_phase(&phase).unwrap();
+
+    let mut item = RoadmapItem::new("item-1".into(), phase.id, "Item 1".into());
+    item.priority = 2;
+    store.insert_roadmap_item(&item).unwrap();
+
+    let dir = std::env::temp_dir().join(format!(
+        "adiyutant_test_export_proj_rm_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let report = export_bundle(&dir, &store).unwrap();
+    assert_eq!(report.status, crate::bundle::dto::BundleStatus::Valid);
+
+    let proj_file = dir.join("projects").join("test-proj.yaml");
+    assert!(proj_file.exists(), "project file should exist after export");
+
+    let rm_file = dir.join("roadmaps").join("test-rm.yaml");
+    assert!(rm_file.exists(), "roadmap file should exist after export");
+
+    let manifest_str = std::fs::read_to_string(dir.join("manifest.yaml")).unwrap();
+    assert!(
+        manifest_str.contains("projects"),
+        "manifest should reference projects section"
+    );
+    assert!(
+        manifest_str.contains("roadmaps"),
+        "manifest should reference roadmaps section"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

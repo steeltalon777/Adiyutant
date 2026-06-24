@@ -6,7 +6,7 @@ use adiyutant_core::id::Id;
 use adiyutant_core::model::action_proposal::ProposalStatus;
 use adiyutant_core::model::context_document::ContextDocumentType;
 use adiyutant_core::model::*;
-use adiyutant_core::store::Store;
+use adiyutant_core::store::{Store, TakeRoadmapItemInput, TakeRoadmapItemResult};
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use rusqlite::Connection;
@@ -17,6 +17,9 @@ use rusqlite::params;
 // ──────────────────────────────────────────────
 
 fn run_migration(conn: &Connection) -> Result<(), CoreError> {
+    conn.execute_batch("PRAGMA foreign_keys = ON;")
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_versions (
             version INTEGER PRIMARY KEY,
@@ -142,6 +145,75 @@ fn run_migration(conn: &Connection) -> Result<(), CoreError> {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_context_documents_source_slug ON context_documents(source_slug) WHERE source_slug IS NOT NULL;
         ").map_err(|e| CoreError::Storage(e.to_string()))?;
         mark_migration(conn, 3, "v0.3-bundle-import-history")?;
+    }
+
+    if current < 4 {
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                slug TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                priority INTEGER NOT NULL DEFAULT 5,
+                why TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS roadmaps (
+                id TEXT PRIMARY KEY,
+                slug TEXT NOT NULL,
+                project_id TEXT NOT NULL REFERENCES projects(id),
+                title TEXT NOT NULL,
+                description TEXT,
+                horizon TEXT NOT NULL DEFAULT 'month',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (project_id, slug)
+            );
+
+            CREATE TABLE IF NOT EXISTS roadmap_phases (
+                id TEXT PRIMARY KEY,
+                slug TEXT NOT NULL,
+                roadmap_id TEXT NOT NULL REFERENCES roadmaps(id),
+                title TEXT NOT NULL,
+                order_index INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'planned',
+                UNIQUE (roadmap_id, slug)
+            );
+
+            CREATE TABLE IF NOT EXISTS roadmap_items (
+                id TEXT PRIMARY KEY,
+                slug TEXT NOT NULL,
+                phase_id TEXT NOT NULL REFERENCES roadmap_phases(id),
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'planned',
+                priority INTEGER NOT NULL DEFAULT 5,
+                acceptance_criteria_json TEXT NOT NULL DEFAULT '[]',
+                depends_on_json TEXT NOT NULL DEFAULT '[]',
+                links_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (phase_id, slug)
+            );
+
+            CREATE TABLE IF NOT EXISTS roadmap_plan_links (
+                id TEXT PRIMARY KEY,
+                roadmap_item_id TEXT NOT NULL REFERENCES roadmap_items(id),
+                plan_item_id TEXT NOT NULL REFERENCES plan_items(id),
+                link_type TEXT NOT NULL DEFAULT 'taken_into_day',
+                created_at TEXT NOT NULL
+            );
+        ",
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        mark_migration(conn, 4, "v0.4-projects-roadmaps")?;
     }
 
     Ok(())
@@ -398,6 +470,238 @@ impl SqliteStore {
                 self,
                 mode,
             )?;
+        }
+
+        // ── projects ──
+        for bp in &bundle.projects {
+            let exists = self.get_project_by_slug(&bp.slug).ok().flatten();
+            match mode {
+                ImportMode::Append => {
+                    if exists.is_none() {
+                        let mut project = adiyutant_core::model::project::Project::new(
+                            bp.slug.clone(),
+                            bp.title.clone(),
+                        );
+                        if let Some(ref desc) = bp.description {
+                            project.description = Some(desc.clone());
+                        }
+                        project.status =
+                            adiyutant_core::model::project::ProjectStatus::from_str(&bp.status)
+                                .unwrap_or(adiyutant_core::model::project::ProjectStatus::Active);
+                        project.priority = bp.priority;
+                        project.why = bp.why.clone();
+                        self.insert_project(&project)?;
+                    }
+                }
+                ImportMode::Merge => {
+                    if let Some(mut existing) = exists {
+                        existing.title = bp.title.clone();
+                        existing.description.clone_from(&bp.description);
+                        existing.status =
+                            adiyutant_core::model::project::ProjectStatus::from_str(&bp.status)
+                                .unwrap_or(adiyutant_core::model::project::ProjectStatus::Active);
+                        existing.priority = bp.priority;
+                        existing.why = bp.why.clone();
+                        existing.updated_at = adiyutant_core::datetime::AdiyutantDateTime::now();
+                        self.update_project(&existing)?;
+                    } else {
+                        let mut project = adiyutant_core::model::project::Project::new(
+                            bp.slug.clone(),
+                            bp.title.clone(),
+                        );
+                        if let Some(ref desc) = bp.description {
+                            project.description = Some(desc.clone());
+                        }
+                        project.status =
+                            adiyutant_core::model::project::ProjectStatus::from_str(&bp.status)
+                                .unwrap_or(adiyutant_core::model::project::ProjectStatus::Active);
+                        project.priority = bp.priority;
+                        project.why = bp.why.clone();
+                        self.insert_project(&project)?;
+                    }
+                }
+            }
+        }
+
+        // ── roadmaps ──
+        for br in &bundle.roadmaps {
+            let project = self.get_project_by_slug(&br.project_slug).ok().flatten();
+            let project_id = match project {
+                Some(ref proj) => proj.id,
+                None => continue,
+            };
+
+            let existing_roadmap = self
+                .get_roadmap_by_project_and_slug(project_id, &br.slug)
+                .ok()
+                .flatten();
+
+            let roadmap_id = match mode {
+                ImportMode::Append => {
+                    if let Some(existing) = existing_roadmap {
+                        existing.id
+                    } else {
+                        let mut roadmap = adiyutant_core::model::roadmap::Roadmap::new(
+                            br.slug.clone(),
+                            project_id,
+                            br.title.clone(),
+                        );
+                        if let Some(ref desc) = br.description {
+                            roadmap.description = Some(desc.clone());
+                        }
+                        roadmap.horizon =
+                            adiyutant_core::model::roadmap::RoadmapHorizon::from_str(&br.horizon)
+                                .unwrap_or(adiyutant_core::model::roadmap::RoadmapHorizon::Month);
+                        roadmap.status =
+                            adiyutant_core::model::project::ProjectStatus::from_str(&br.status)
+                                .unwrap_or(adiyutant_core::model::project::ProjectStatus::Active);
+                        self.insert_roadmap(&roadmap)?;
+                        roadmap.id
+                    }
+                }
+                ImportMode::Merge => {
+                    if let Some(mut existing) = existing_roadmap {
+                        existing.title = br.title.clone();
+                        existing.description.clone_from(&br.description);
+                        existing.horizon =
+                            adiyutant_core::model::roadmap::RoadmapHorizon::from_str(&br.horizon)
+                                .unwrap_or(adiyutant_core::model::roadmap::RoadmapHorizon::Month);
+                        existing.status =
+                            adiyutant_core::model::project::ProjectStatus::from_str(&br.status)
+                                .unwrap_or(adiyutant_core::model::project::ProjectStatus::Active);
+                        existing.updated_at = adiyutant_core::datetime::AdiyutantDateTime::now();
+                        self.update_roadmap(&existing)?;
+                        existing.id
+                    } else {
+                        let mut roadmap = adiyutant_core::model::roadmap::Roadmap::new(
+                            br.slug.clone(),
+                            project_id,
+                            br.title.clone(),
+                        );
+                        if let Some(ref desc) = br.description {
+                            roadmap.description = Some(desc.clone());
+                        }
+                        roadmap.horizon =
+                            adiyutant_core::model::roadmap::RoadmapHorizon::from_str(&br.horizon)
+                                .unwrap_or(adiyutant_core::model::roadmap::RoadmapHorizon::Month);
+                        roadmap.status =
+                            adiyutant_core::model::project::ProjectStatus::from_str(&br.status)
+                                .unwrap_or(adiyutant_core::model::project::ProjectStatus::Active);
+                        self.insert_roadmap(&roadmap)?;
+                        roadmap.id
+                    }
+                }
+            };
+
+            // ── roadmap phases ──
+            let existing_phases = self.list_roadmap_phases(roadmap_id).unwrap_or_default();
+            for phase in &br.phases {
+                let existing_phase = existing_phases.iter().find(|p| p.slug == phase.slug);
+                let phase_id = match mode {
+                    ImportMode::Append => {
+                        if let Some(ep) = existing_phase {
+                            ep.id
+                        } else {
+                            let new_phase = adiyutant_core::model::roadmap::RoadmapPhase::new(
+                                phase.slug.clone(),
+                                roadmap_id,
+                                phase.title.clone(),
+                                phase.order_index,
+                            );
+                            self.insert_roadmap_phase(&new_phase)?;
+                            new_phase.id
+                        }
+                    }
+                    ImportMode::Merge => {
+                        if let Some(ep) = existing_phase {
+                            self.update_roadmap_phase(
+                                &adiyutant_core::model::roadmap::RoadmapPhase {
+                                    id: ep.id,
+                                    slug: phase.slug.clone(),
+                                    roadmap_id,
+                                    title: phase.title.clone(),
+                                    order_index: phase.order_index,
+                                    status: ep.status,
+                                },
+                            )?;
+                            ep.id
+                        } else {
+                            let new_phase = adiyutant_core::model::roadmap::RoadmapPhase::new(
+                                phase.slug.clone(),
+                                roadmap_id,
+                                phase.title.clone(),
+                                phase.order_index,
+                            );
+                            self.insert_roadmap_phase(&new_phase)?;
+                            new_phase.id
+                        }
+                    }
+                };
+
+                // ── roadmap items ──
+                let existing_items = self.list_roadmap_items(phase_id).unwrap_or_default();
+                for item in &phase.items {
+                    let existing_item = existing_items.iter().find(|i| i.slug == item.slug);
+                    match mode {
+                        ImportMode::Append => {
+                            if existing_item.is_none() {
+                                let mut new_item = adiyutant_core::model::roadmap::RoadmapItem::new(
+                                    item.slug.clone(),
+                                    phase_id,
+                                    item.title.clone(),
+                                );
+                                new_item.description = item.description.clone();
+                                new_item.priority = item.priority;
+                                new_item.acceptance_criteria = item.acceptance_criteria.clone();
+                                new_item.depends_on = item.depends_on.clone();
+                                new_item.links = item.links.clone();
+                                self.insert_roadmap_item(&new_item)?;
+                            }
+                        }
+                        ImportMode::Merge => {
+                            if let Some(ei) = existing_item {
+                                let now = adiyutant_core::datetime::AdiyutantDateTime::now();
+                                self.update_roadmap_item(
+                                    &adiyutant_core::model::roadmap::RoadmapItem {
+                                        id: ei.id,
+                                        slug: item.slug.clone(),
+                                        phase_id,
+                                        title: item.title.clone(),
+                                        description: item.description.clone(),
+                                        status: adiyutant_core::model::roadmap::RoadmapItemStatus::from_str(&item.status)
+                                            .unwrap_or(ei.status),
+                                        priority: item.priority,
+                                        acceptance_criteria: item.acceptance_criteria.clone(),
+                                        depends_on: item.depends_on.clone(),
+                                        links: item.links.clone(),
+                                        created_at: ei.created_at,
+                                        updated_at: now,
+                                    },
+                                )?;
+                            } else {
+                                let mut new_item = adiyutant_core::model::roadmap::RoadmapItem::new(
+                                    item.slug.clone(),
+                                    phase_id,
+                                    item.title.clone(),
+                                );
+                                new_item.description = item.description.clone();
+                                new_item.status =
+                                    adiyutant_core::model::roadmap::RoadmapItemStatus::from_str(
+                                        &item.status,
+                                    )
+                                    .unwrap_or(
+                                        adiyutant_core::model::roadmap::RoadmapItemStatus::Planned,
+                                    );
+                                new_item.priority = item.priority;
+                                new_item.acceptance_criteria = item.acceptance_criteria.clone();
+                                new_item.depends_on = item.depends_on.clone();
+                                new_item.links = item.links.clone();
+                                self.insert_roadmap_item(&new_item)?;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -2207,6 +2511,601 @@ impl Store for SqliteStore {
             }
         }
     }
+
+    // ── Project ──
+
+    fn insert_project(&self, p: &Project) -> Result<(), Self::Error> {
+        self.conn
+            .execute(
+                "INSERT INTO projects (id, slug, title, description, status, priority, why, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    uuid_to_string(p.id),
+                    p.slug,
+                    p.title,
+                    p.description,
+                    p.status.as_str(),
+                    p.priority as i64,
+                    p.why,
+                    datetime_to_string(&p.created_at),
+                    datetime_to_string(&p.updated_at),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_project(&self, id: Id<Project>) -> Result<Option<Project>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, title, description, status, priority, why, created_at, updated_at FROM projects WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_project(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(p)) => Ok(Some(p?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn get_project_by_slug(&self, slug: &str) -> Result<Option<Project>, Self::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, title, description, status, priority, why, created_at, updated_at FROM projects WHERE slug = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![slug], |row| Ok(row_to_project(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(p)) => Ok(Some(p?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_projects(&self) -> Result<Vec<Project>, Self::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, title, description, status, priority, why, created_at, updated_at FROM projects ORDER BY created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok(row_to_project(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn update_project(&self, p: &Project) -> Result<(), Self::Error> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE projects SET slug = ?1, title = ?2, description = ?3, status = ?4, priority = ?5, why = ?6, updated_at = ?7 WHERE id = ?8",
+                params![
+                    p.slug,
+                    p.title,
+                    p.description,
+                    p.status.as_str(),
+                    p.priority as i64,
+                    p.why,
+                    datetime_to_string(&p.updated_at),
+                    uuid_to_string(p.id),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("project".into()));
+        }
+        Ok(())
+    }
+
+    // ── Roadmap ──
+
+    fn insert_roadmap(&self, r: &Roadmap) -> Result<(), Self::Error> {
+        self.conn
+            .execute(
+                "INSERT INTO roadmaps (id, slug, project_id, title, description, horizon, status, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    uuid_to_string(r.id),
+                    r.slug,
+                    uuid_to_string(r.project_id),
+                    r.title,
+                    r.description,
+                    r.horizon.as_str(),
+                    r.status.as_str(),
+                    datetime_to_string(&r.created_at),
+                    datetime_to_string(&r.updated_at),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_roadmap(&self, id: Id<Roadmap>) -> Result<Option<Roadmap>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, project_id, title, description, horizon, status, created_at, updated_at FROM roadmaps WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_roadmap(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(r)) => Ok(Some(r?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn get_roadmap_by_project_and_slug(
+        &self,
+        project_id: Id<Project>,
+        slug: &str,
+    ) -> Result<Option<Roadmap>, Self::Error> {
+        let pid_str = uuid_to_string(project_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, project_id, title, description, horizon, status, created_at, updated_at FROM roadmaps WHERE project_id = ?1 AND slug = ?2")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![pid_str, slug], |row| Ok(row_to_roadmap(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(r)) => Ok(Some(r?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_roadmaps(&self) -> Result<Vec<Roadmap>, Self::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, project_id, title, description, horizon, status, created_at, updated_at FROM roadmaps ORDER BY created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok(row_to_roadmap(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn list_roadmaps_by_project(
+        &self,
+        project_id: Id<Project>,
+    ) -> Result<Vec<Roadmap>, Self::Error> {
+        let pid_str = uuid_to_string(project_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, project_id, title, description, horizon, status, created_at, updated_at FROM roadmaps WHERE project_id = ?1 ORDER BY created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![pid_str], |row| Ok(row_to_roadmap(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn update_roadmap(&self, r: &Roadmap) -> Result<(), Self::Error> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE roadmaps SET slug = ?1, project_id = ?2, title = ?3, description = ?4, horizon = ?5, status = ?6, updated_at = ?7 WHERE id = ?8",
+                params![
+                    r.slug,
+                    uuid_to_string(r.project_id),
+                    r.title,
+                    r.description,
+                    r.horizon.as_str(),
+                    r.status.as_str(),
+                    datetime_to_string(&r.updated_at),
+                    uuid_to_string(r.id),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("roadmap".into()));
+        }
+        Ok(())
+    }
+
+    // ── RoadmapPhase ──
+
+    fn insert_roadmap_phase(&self, p: &RoadmapPhase) -> Result<(), Self::Error> {
+        self.conn
+            .execute(
+                "INSERT INTO roadmap_phases (id, slug, roadmap_id, title, order_index, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    uuid_to_string(p.id),
+                    p.slug,
+                    uuid_to_string(p.roadmap_id),
+                    p.title,
+                    p.order_index as i64,
+                    p.status.as_str(),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_roadmap_phase(&self, id: Id<RoadmapPhase>) -> Result<Option<RoadmapPhase>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, roadmap_id, title, order_index, status FROM roadmap_phases WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_roadmap_phase(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(p)) => Ok(Some(p?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_roadmap_phases(
+        &self,
+        roadmap_id: Id<Roadmap>,
+    ) -> Result<Vec<RoadmapPhase>, Self::Error> {
+        let rid_str = uuid_to_string(roadmap_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, roadmap_id, title, order_index, status FROM roadmap_phases WHERE roadmap_id = ?1 ORDER BY order_index ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![rid_str], |row| Ok(row_to_roadmap_phase(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn list_all_roadmap_phases(&self) -> Result<Vec<RoadmapPhase>, Self::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, roadmap_id, title, order_index, status FROM roadmap_phases ORDER BY order_index ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok(row_to_roadmap_phase(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn update_roadmap_phase(&self, p: &RoadmapPhase) -> Result<(), Self::Error> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE roadmap_phases SET slug = ?1, roadmap_id = ?2, title = ?3, order_index = ?4, status = ?5 WHERE id = ?6",
+                params![
+                    p.slug,
+                    uuid_to_string(p.roadmap_id),
+                    p.title,
+                    p.order_index as i64,
+                    p.status.as_str(),
+                    uuid_to_string(p.id),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("roadmap_phase".into()));
+        }
+        Ok(())
+    }
+
+    // ── RoadmapItem ──
+
+    fn insert_roadmap_item(&self, i: &RoadmapItem) -> Result<(), Self::Error> {
+        self.conn
+            .execute(
+                "INSERT INTO roadmap_items (id, slug, phase_id, title, description, status, priority, acceptance_criteria_json, depends_on_json, links_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    uuid_to_string(i.id),
+                    i.slug,
+                    uuid_to_string(i.phase_id),
+                    i.title,
+                    i.description,
+                    i.status.as_str(),
+                    i.priority as i64,
+                    json_to_string(&i.acceptance_criteria),
+                    json_to_string(&i.depends_on),
+                    json_to_string(&i.links),
+                    datetime_to_string(&i.created_at),
+                    datetime_to_string(&i.updated_at),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_roadmap_item(&self, id: Id<RoadmapItem>) -> Result<Option<RoadmapItem>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, phase_id, title, description, status, priority, acceptance_criteria_json, depends_on_json, links_json, created_at, updated_at FROM roadmap_items WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_roadmap_item(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(i)) => Ok(Some(i?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_roadmap_items(
+        &self,
+        phase_id: Id<RoadmapPhase>,
+    ) -> Result<Vec<RoadmapItem>, Self::Error> {
+        let pid_str = uuid_to_string(phase_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, phase_id, title, description, status, priority, acceptance_criteria_json, depends_on_json, links_json, created_at, updated_at FROM roadmap_items WHERE phase_id = ?1 ORDER BY priority ASC, created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![pid_str], |row| Ok(row_to_roadmap_item(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn list_all_roadmap_items(&self) -> Result<Vec<RoadmapItem>, Self::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, slug, phase_id, title, description, status, priority, acceptance_criteria_json, depends_on_json, links_json, created_at, updated_at FROM roadmap_items ORDER BY created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok(row_to_roadmap_item(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn update_roadmap_item(&self, i: &RoadmapItem) -> Result<(), Self::Error> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE roadmap_items SET slug = ?1, phase_id = ?2, title = ?3, description = ?4, status = ?5, priority = ?6, acceptance_criteria_json = ?7, depends_on_json = ?8, links_json = ?9, updated_at = ?10 WHERE id = ?11",
+                params![
+                    i.slug,
+                    uuid_to_string(i.phase_id),
+                    i.title,
+                    i.description,
+                    i.status.as_str(),
+                    i.priority as i64,
+                    json_to_string(&i.acceptance_criteria),
+                    json_to_string(&i.depends_on),
+                    json_to_string(&i.links),
+                    datetime_to_string(&i.updated_at),
+                    uuid_to_string(i.id),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        if affected == 0 {
+            return Err(CoreError::NotFound("roadmap_item".into()));
+        }
+        Ok(())
+    }
+
+    // ── RoadmapPlanLink ──
+
+    fn insert_roadmap_plan_link(&self, link: &RoadmapPlanLink) -> Result<(), Self::Error> {
+        self.conn
+            .execute(
+                "INSERT INTO roadmap_plan_links (id, roadmap_item_id, plan_item_id, link_type, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    uuid_to_string(link.id),
+                    uuid_to_string(link.roadmap_item_id),
+                    uuid_to_string(link.plan_item_id),
+                    link.link_type,
+                    datetime_to_string(&link.created_at),
+                ],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_roadmap_plan_link(
+        &self,
+        id: Id<RoadmapPlanLink>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error> {
+        let id_str = uuid_to_string(id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, roadmap_item_id, plan_item_id, link_type, created_at FROM roadmap_plan_links WHERE id = ?1")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![id_str], |row| Ok(row_to_roadmap_plan_link(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(l)) => Ok(Some(l?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    fn list_roadmap_plan_links_by_roadmap_item(
+        &self,
+        roadmap_item_id: Id<RoadmapItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error> {
+        let rid_str = uuid_to_string(roadmap_item_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, roadmap_item_id, plan_item_id, link_type, created_at FROM roadmap_plan_links WHERE roadmap_item_id = ?1 ORDER BY created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![rid_str], |row| Ok(row_to_roadmap_plan_link(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn list_roadmap_plan_links_by_plan_item(
+        &self,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error> {
+        let pid_str = uuid_to_string(plan_item_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, roadmap_item_id, plan_item_id, link_type, created_at FROM roadmap_plan_links WHERE plan_item_id = ?1 ORDER BY created_at ASC")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![pid_str], |row| Ok(row_to_roadmap_plan_link(row)))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CoreError::Storage(e.to_string()))??);
+        }
+        Ok(result)
+    }
+
+    fn find_roadmap_plan_link(
+        &self,
+        roadmap_item_id: Id<RoadmapItem>,
+        plan_item_id: Id<PlanItem>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error> {
+        let rid_str = uuid_to_string(roadmap_item_id);
+        let pid_str = uuid_to_string(plan_item_id);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, roadmap_item_id, plan_item_id, link_type, created_at FROM roadmap_plan_links WHERE roadmap_item_id = ?1 AND plan_item_id = ?2")
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut rows = stmt
+            .query_map(params![rid_str, pid_str], |row| {
+                Ok(row_to_roadmap_plan_link(row))
+            })
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        match rows.next() {
+            Some(Ok(l)) => Ok(Some(l?)),
+            Some(Err(e)) => Err(CoreError::Storage(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    // ── Take-item composite ──
+
+    fn take_roadmap_item_composite(
+        &self,
+        input: TakeRoadmapItemInput,
+    ) -> Result<TakeRoadmapItemResult, Self::Error> {
+        if let Some(existing_link) =
+            self.find_roadmap_plan_link(input.roadmap_item_id, input.plan_item.id)?
+        {
+            return Ok(TakeRoadmapItemResult {
+                plan_item_id: existing_link.plan_item_id,
+                link_id: existing_link.id,
+                plan_item_reused: true,
+                link_reused: true,
+            });
+        }
+
+        self.with_transaction(|conn| {
+            if let Some(dl) = &input.daily_log_to_create {
+                conn.execute(
+                    "INSERT INTO daily_logs (id, date, mode, sleep_score, energy, mood, raw_notes, ai_summary, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        uuid_to_string(dl.id),
+                        dl.date.to_string(),
+                        dl.mode,
+                        dl.sleep_score.map(|v| v as i64),
+                        dl.energy.map(|v| v as i64),
+                        dl.mood.map(|v| v as i64),
+                        dl.raw_notes,
+                        dl.ai_summary,
+                        datetime_to_string(&dl.created_at),
+                        datetime_to_string(&dl.updated_at),
+                    ],
+                ).map_err(|e| CoreError::Storage(e.to_string()))?;
+            }
+
+            let pi = &input.plan_item;
+            conn.execute(
+                "INSERT INTO plan_items (id, daily_log_id, title, description, quadrant, planned_start, planned_end, status, priority, source, waiting_review_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    uuid_to_string(pi.id),
+                    uuid_to_string(pi.daily_log_id),
+                    pi.title,
+                    pi.description,
+                    pi.quadrant.as_str(),
+                    pi.planned_start.map(|t| t.format("%H:%M").to_string()),
+                    pi.planned_end.map(|t| t.format("%H:%M").to_string()),
+                    pi.status.as_str(),
+                    pi.priority,
+                    pi.source.as_str(),
+                    pi.waiting_review_at.map(|d| d.format("%Y-%m-%d").to_string()),
+                    datetime_to_string(&pi.created_at),
+                    datetime_to_string(&pi.updated_at),
+                ],
+            ).map_err(|e| CoreError::Storage(e.to_string()))?;
+
+            let cp = &input.initial_checkpoint;
+            conn.execute(
+                "INSERT INTO task_checkpoints (id, plan_item_id, kind, status, response, created_at, answered_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    uuid_to_string(cp.id),
+                    uuid_to_string(cp.plan_item_id),
+                    cp.kind.as_str(),
+                    cp.status.as_str(),
+                    cp.response.as_ref().map(|r| r.as_str()),
+                    datetime_to_string(&cp.created_at),
+                    cp.answered_at.as_ref().map(datetime_to_string),
+                ],
+            ).map_err(|e| CoreError::Storage(e.to_string()))?;
+
+            let link = &input.link;
+            conn.execute(
+                "INSERT INTO roadmap_plan_links (id, roadmap_item_id, plan_item_id, link_type, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    uuid_to_string(link.id),
+                    uuid_to_string(link.roadmap_item_id),
+                    uuid_to_string(link.plan_item_id),
+                    link.link_type,
+                    datetime_to_string(&link.created_at),
+                ],
+            ).map_err(|e| CoreError::Storage(e.to_string()))?;
+
+            if input.activate_item {
+                conn.execute(
+                    "UPDATE roadmap_items SET status = 'active' WHERE id = ?1 AND status = 'planned'",
+                    params![uuid_to_string(input.roadmap_item_id)],
+                ).map_err(|e| CoreError::Storage(e.to_string()))?;
+            }
+
+            Ok(())
+        })?;
+
+        Ok(TakeRoadmapItemResult {
+            plan_item_id: input.plan_item.id,
+            link_id: input.link.id,
+            plan_item_reused: false,
+            link_reused: false,
+        })
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -2346,6 +3245,90 @@ fn row_to_action_proposal(row: &rusqlite::Row<'_>) -> Result<ActionProposal, Cor
             Some(s) => Some(deserialize_datetime(&s)?),
             None => None,
         },
+    })
+}
+
+fn row_to_project(row: &rusqlite::Row<'_>) -> Result<Project, CoreError> {
+    use adiyutant_core::model::project::ProjectStatus;
+    let status_str: String = row_get(row, 4)?;
+    Ok(Project {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        slug: row_get(row, 1)?,
+        title: row_get(row, 2)?,
+        description: row_get(row, 3)?,
+        status: ProjectStatus::from_str(&status_str).ok_or_else(|| {
+            CoreError::InvalidInput(format!("invalid project status: {status_str}"))
+        })?,
+        priority: row_get::<i64>(row, 5)? as u8,
+        why: row_get(row, 6)?,
+        created_at: parse_datetime(&row_get::<String>(row, 7)?)?,
+        updated_at: parse_datetime(&row_get::<String>(row, 8)?)?,
+    })
+}
+
+fn row_to_roadmap(row: &rusqlite::Row<'_>) -> Result<Roadmap, CoreError> {
+    use adiyutant_core::model::project::ProjectStatus;
+    use adiyutant_core::model::roadmap::RoadmapHorizon;
+    let horizon_str: String = row_get(row, 5)?;
+    let status_str: String = row_get(row, 6)?;
+    Ok(Roadmap {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        slug: row_get(row, 1)?,
+        project_id: parse_uuid(&row_get::<String>(row, 2)?)?,
+        title: row_get(row, 3)?,
+        description: row_get(row, 4)?,
+        horizon: RoadmapHorizon::from_str(&horizon_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("invalid horizon: {horizon_str}")))?,
+        status: ProjectStatus::from_str(&status_str).ok_or_else(|| {
+            CoreError::InvalidInput(format!("invalid roadmap status: {status_str}"))
+        })?,
+        created_at: parse_datetime(&row_get::<String>(row, 7)?)?,
+        updated_at: parse_datetime(&row_get::<String>(row, 8)?)?,
+    })
+}
+
+fn row_to_roadmap_phase(row: &rusqlite::Row<'_>) -> Result<RoadmapPhase, CoreError> {
+    use adiyutant_core::model::roadmap::PhaseStatus;
+    let status_str: String = row_get(row, 5)?;
+    Ok(RoadmapPhase {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        slug: row_get(row, 1)?,
+        roadmap_id: parse_uuid(&row_get::<String>(row, 2)?)?,
+        title: row_get(row, 3)?,
+        order_index: row_get::<i64>(row, 4)? as u32,
+        status: PhaseStatus::from_str(&status_str).ok_or_else(|| {
+            CoreError::InvalidInput(format!("invalid phase status: {status_str}"))
+        })?,
+    })
+}
+
+fn row_to_roadmap_item(row: &rusqlite::Row<'_>) -> Result<RoadmapItem, CoreError> {
+    use adiyutant_core::model::roadmap::RoadmapItemStatus;
+    let status_str: String = row_get(row, 5)?;
+    Ok(RoadmapItem {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        slug: row_get(row, 1)?,
+        phase_id: parse_uuid(&row_get::<String>(row, 2)?)?,
+        title: row_get(row, 3)?,
+        description: row_get(row, 4)?,
+        status: RoadmapItemStatus::from_str(&status_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("invalid item status: {status_str}")))?,
+        priority: row_get::<i64>(row, 6)? as u8,
+        acceptance_criteria: json_from_str(&row_get::<String>(row, 7)?)?,
+        depends_on: json_from_str(&row_get::<String>(row, 8)?)?,
+        links: json_from_str(&row_get::<String>(row, 9)?)?,
+        created_at: parse_datetime(&row_get::<String>(row, 10)?)?,
+        updated_at: parse_datetime(&row_get::<String>(row, 11)?)?,
+    })
+}
+
+fn row_to_roadmap_plan_link(row: &rusqlite::Row<'_>) -> Result<RoadmapPlanLink, CoreError> {
+    Ok(RoadmapPlanLink {
+        id: parse_uuid(&row_get::<String>(row, 0)?)?,
+        roadmap_item_id: parse_uuid(&row_get::<String>(row, 1)?)?,
+        plan_item_id: parse_uuid(&row_get::<String>(row, 2)?)?,
+        link_type: row_get(row, 3)?,
+        created_at: parse_datetime(&row_get::<String>(row, 4)?)?,
     })
 }
 
@@ -3022,6 +4005,126 @@ impl Store for NoopStore {
         _import_run: &ImportRun,
     ) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    // ── Phase 8.4B: Noop stubs ──
+    fn insert_project(&self, _p: &Project) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_project(&self, _id: Id<Project>) -> Result<Option<Project>, Self::Error> {
+        Ok(None)
+    }
+    fn get_project_by_slug(&self, _slug: &str) -> Result<Option<Project>, Self::Error> {
+        Ok(None)
+    }
+    fn list_projects(&self) -> Result<Vec<Project>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_project(&self, _p: &Project) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn insert_roadmap(&self, _r: &Roadmap) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_roadmap(&self, _id: Id<Roadmap>) -> Result<Option<Roadmap>, Self::Error> {
+        Ok(None)
+    }
+    fn get_roadmap_by_project_and_slug(
+        &self,
+        _project_id: Id<Project>,
+        _slug: &str,
+    ) -> Result<Option<Roadmap>, Self::Error> {
+        Ok(None)
+    }
+    fn list_roadmaps(&self) -> Result<Vec<Roadmap>, Self::Error> {
+        Ok(vec![])
+    }
+    fn list_roadmaps_by_project(
+        &self,
+        _project_id: Id<Project>,
+    ) -> Result<Vec<Roadmap>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_roadmap(&self, _r: &Roadmap) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn insert_roadmap_phase(&self, _p: &RoadmapPhase) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_roadmap_phase(
+        &self,
+        _id: Id<RoadmapPhase>,
+    ) -> Result<Option<RoadmapPhase>, Self::Error> {
+        Ok(None)
+    }
+    fn list_roadmap_phases(
+        &self,
+        _roadmap_id: Id<Roadmap>,
+    ) -> Result<Vec<RoadmapPhase>, Self::Error> {
+        Ok(vec![])
+    }
+    fn list_all_roadmap_phases(&self) -> Result<Vec<RoadmapPhase>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_roadmap_phase(&self, _p: &RoadmapPhase) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn insert_roadmap_item(&self, _i: &RoadmapItem) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_roadmap_item(&self, _id: Id<RoadmapItem>) -> Result<Option<RoadmapItem>, Self::Error> {
+        Ok(None)
+    }
+    fn list_roadmap_items(
+        &self,
+        _phase_id: Id<RoadmapPhase>,
+    ) -> Result<Vec<RoadmapItem>, Self::Error> {
+        Ok(vec![])
+    }
+    fn list_all_roadmap_items(&self) -> Result<Vec<RoadmapItem>, Self::Error> {
+        Ok(vec![])
+    }
+    fn update_roadmap_item(&self, _i: &RoadmapItem) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn insert_roadmap_plan_link(&self, _link: &RoadmapPlanLink) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn get_roadmap_plan_link(
+        &self,
+        _id: Id<RoadmapPlanLink>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error> {
+        Ok(None)
+    }
+    fn list_roadmap_plan_links_by_roadmap_item(
+        &self,
+        _roadmap_item_id: Id<RoadmapItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error> {
+        Ok(vec![])
+    }
+    fn list_roadmap_plan_links_by_plan_item(
+        &self,
+        _plan_item_id: Id<PlanItem>,
+    ) -> Result<Vec<RoadmapPlanLink>, Self::Error> {
+        Ok(vec![])
+    }
+    fn find_roadmap_plan_link(
+        &self,
+        _roadmap_item_id: Id<RoadmapItem>,
+        _plan_item_id: Id<PlanItem>,
+    ) -> Result<Option<RoadmapPlanLink>, Self::Error> {
+        Ok(None)
+    }
+    fn take_roadmap_item_composite(
+        &self,
+        _input: TakeRoadmapItemInput,
+    ) -> Result<TakeRoadmapItemResult, Self::Error> {
+        Ok(TakeRoadmapItemResult {
+            plan_item_id: _input.plan_item.id,
+            link_id: _input.link.id,
+            plan_item_reused: false,
+            link_reused: false,
+        })
     }
 }
 
@@ -3896,7 +4999,7 @@ mod tests {
         let version_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_versions", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_count, 3);
+        assert_eq!(version_count, 4);
     }
 
     #[test]
@@ -4275,6 +5378,556 @@ mod tests {
         assert!(
             store.list_checklist_templates().unwrap().is_empty(),
             "no checklist templates should exist after rolled-back apply"
+        );
+    }
+
+    // ── Project/Roadmap integration tests ──
+
+    fn make_project() -> Project {
+        Project::new("test-project".into(), "Test Project".into())
+    }
+
+    fn make_roadmap(project_id: Id<Project>) -> Roadmap {
+        Roadmap::new("test-roadmap".into(), project_id, "Test Roadmap".into())
+    }
+
+    fn make_roadmap_phase(roadmap_id: Id<Roadmap>) -> RoadmapPhase {
+        RoadmapPhase::new("phase-1".into(), roadmap_id, "Phase 1".into(), 0)
+    }
+
+    fn make_roadmap_item(phase_id: Id<RoadmapPhase>) -> RoadmapItem {
+        RoadmapItem::new("item-1".into(), phase_id, "Item 1".into())
+    }
+
+    fn make_daily_log_for_take(store: &SqliteStore, date_str: &str) -> DailyLog {
+        let log = make_daily_log(date_str);
+        store.insert_daily_log(&log).unwrap();
+        log
+    }
+
+    #[test]
+    fn insert_and_get_project() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let retrieved = store.get_project(p.id).unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, p.id);
+    }
+
+    #[test]
+    fn insert_project_duplicate_slug_fails() {
+        let store = setup();
+        let p1 = make_project();
+        store.insert_project(&p1).unwrap();
+        let mut p2 = make_project();
+        p2.id = Id::new();
+        let result = store.insert_project(&p2);
+        assert!(result.is_err(), "duplicate slug should fail");
+    }
+
+    #[test]
+    fn get_project_by_slug() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let retrieved = store.get_project_by_slug("test-project").unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, p.id);
+
+        let not_found = store.get_project_by_slug("nonexistent").unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn list_projects() {
+        let store = setup();
+        let p1 = make_project();
+        let p2 = Project::new("second-project".into(), "Second".into());
+        store.insert_project(&p1).unwrap();
+        store.insert_project(&p2).unwrap();
+        let projects = store.list_projects().unwrap();
+        assert_eq!(projects.len(), 2);
+    }
+
+    #[test]
+    fn update_project() {
+        let store = setup();
+        let mut p = make_project();
+        store.insert_project(&p).unwrap();
+        p.title = "Updated Title".into();
+        store.update_project(&p).unwrap();
+        let retrieved = store.get_project(p.id).unwrap().unwrap();
+        assert_eq!(retrieved.title, "Updated Title");
+    }
+
+    #[test]
+    fn insert_and_get_roadmap() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let retrieved = store.get_roadmap(r.id).unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, r.id);
+    }
+
+    #[test]
+    fn list_roadmaps_by_project() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r1 = make_roadmap(p.id);
+        let r2 = Roadmap::new("roadmap-2".into(), p.id, "Roadmap 2".into());
+        store.insert_roadmap(&r1).unwrap();
+        store.insert_roadmap(&r2).unwrap();
+
+        let roadmaps = store.list_roadmaps_by_project(p.id).unwrap();
+        assert_eq!(roadmaps.len(), 2);
+
+        let all = store.list_roadmaps().unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn get_roadmap_by_project_and_slug() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let retrieved = store
+            .get_roadmap_by_project_and_slug(p.id, "test-roadmap")
+            .unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, r.id);
+    }
+
+    #[test]
+    fn update_roadmap() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let mut r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        r.title = "Updated Roadmap".into();
+        store.update_roadmap(&r).unwrap();
+        let retrieved = store.get_roadmap(r.id).unwrap().unwrap();
+        assert_eq!(retrieved.title, "Updated Roadmap");
+    }
+
+    #[test]
+    fn insert_and_get_roadmap_phase() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let retrieved = store.get_roadmap_phase(phase.id).unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, phase.id);
+    }
+
+    #[test]
+    fn list_roadmap_phases() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let ph1 = make_roadmap_phase(r.id);
+        let ph2 = RoadmapPhase::new("phase-2".into(), r.id, "Phase 2".into(), 1);
+        store.insert_roadmap_phase(&ph1).unwrap();
+        store.insert_roadmap_phase(&ph2).unwrap();
+        assert_eq!(store.list_roadmap_phases(r.id).unwrap().len(), 2);
+        assert_eq!(store.list_all_roadmap_phases().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn update_roadmap_phase() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let mut phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        phase.title = "Updated Phase".into();
+        store.update_roadmap_phase(&phase).unwrap();
+        let retrieved = store.get_roadmap_phase(phase.id).unwrap().unwrap();
+        assert_eq!(retrieved.title, "Updated Phase");
+    }
+
+    #[test]
+    fn insert_and_get_roadmap_item() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let mut item = make_roadmap_item(phase.id);
+        item.acceptance_criteria = vec!["must work".into()];
+        item.depends_on = vec!["dep-1".into()];
+        item.links = vec!["link-1".into()];
+        store.insert_roadmap_item(&item).unwrap();
+        let retrieved = store.get_roadmap_item(item.id).unwrap().unwrap();
+        assert_eq!(retrieved.acceptance_criteria, vec!["must work"]);
+        assert_eq!(retrieved.depends_on, vec!["dep-1"]);
+        assert_eq!(retrieved.links, vec!["link-1"]);
+    }
+
+    #[test]
+    fn list_roadmap_items() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        store
+            .insert_roadmap_item(&make_roadmap_item(phase.id))
+            .unwrap();
+        store
+            .insert_roadmap_item(&RoadmapItem::new(
+                "item-2".into(),
+                phase.id,
+                "Item 2".into(),
+            ))
+            .unwrap();
+        assert_eq!(store.list_roadmap_items(phase.id).unwrap().len(), 2);
+        assert_eq!(store.list_all_roadmap_items().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn update_roadmap_item() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let mut item = make_roadmap_item(phase.id);
+        store.insert_roadmap_item(&item).unwrap();
+        item.title = "Updated Item".into();
+        store.update_roadmap_item(&item).unwrap();
+        let retrieved = store.get_roadmap_item(item.id).unwrap().unwrap();
+        assert_eq!(retrieved.title, "Updated Item");
+    }
+
+    #[test]
+    fn insert_and_get_roadmap_plan_link() {
+        let store = setup();
+        let log = make_daily_log_for_take(&store, "2026-06-20");
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let item = make_roadmap_item(phase.id);
+        store.insert_roadmap_item(&item).unwrap();
+        let plan_item = PlanItem::new(log.id, "Test plan".into());
+        store.insert_plan_item(&plan_item).unwrap();
+        let link = RoadmapPlanLink::new(item.id, plan_item.id);
+        store.insert_roadmap_plan_link(&link).unwrap();
+        let retrieved = store.get_roadmap_plan_link(link.id).unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, link.id);
+    }
+
+    #[test]
+    fn list_roadmap_plan_links() {
+        let store = setup();
+        let log = make_daily_log_for_take(&store, "2026-06-20");
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let item = make_roadmap_item(phase.id);
+        store.insert_roadmap_item(&item).unwrap();
+        let pi1 = PlanItem::new(log.id, "PI 1".into());
+        let pi2 = PlanItem::new(log.id, "PI 2".into());
+        store.insert_plan_item(&pi1).unwrap();
+        store.insert_plan_item(&pi2).unwrap();
+        let link1 = RoadmapPlanLink::new(item.id, pi1.id);
+        let link2 = RoadmapPlanLink::new(item.id, pi2.id);
+        store.insert_roadmap_plan_link(&link1).unwrap();
+        store.insert_roadmap_plan_link(&link2).unwrap();
+
+        let by_ri = store
+            .list_roadmap_plan_links_by_roadmap_item(item.id)
+            .unwrap();
+        assert_eq!(by_ri.len(), 2);
+
+        let by_pi = store.list_roadmap_plan_links_by_plan_item(pi1.id).unwrap();
+        assert_eq!(by_pi.len(), 1);
+    }
+
+    #[test]
+    fn find_roadmap_plan_link() {
+        let store = setup();
+        let log = make_daily_log_for_take(&store, "2026-06-20");
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let item = make_roadmap_item(phase.id);
+        store.insert_roadmap_item(&item).unwrap();
+        let plan_item = PlanItem::new(log.id, "Test".into());
+        store.insert_plan_item(&plan_item).unwrap();
+        let link = RoadmapPlanLink::new(item.id, plan_item.id);
+        store.insert_roadmap_plan_link(&link).unwrap();
+
+        let found = store.find_roadmap_plan_link(item.id, plan_item.id).unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, link.id);
+
+        let not_found = store.find_roadmap_plan_link(item.id, Id::new()).unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn take_item_composite_creates_all_records() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let mut item = make_roadmap_item(phase.id);
+        item.status = adiyutant_core::model::roadmap::RoadmapItemStatus::Planned;
+        store.insert_roadmap_item(&item).unwrap();
+
+        let daily_log = DailyLog::new(NaiveDate::from_ymd_opt(2026, 6, 20).unwrap());
+        let plan_item = PlanItem::new(daily_log.id, "Taken item".into());
+        let checkpoint = TaskCheckpoint::new(plan_item.id, CheckpointKind::StartCheck);
+        let link = RoadmapPlanLink::new(item.id, plan_item.id);
+
+        let input = TakeRoadmapItemInput {
+            roadmap_item_id: item.id,
+            target_date: NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
+            daily_log_to_create: Some(daily_log),
+            plan_item,
+            initial_checkpoint: checkpoint,
+            link,
+            activate_item: true,
+        };
+
+        let result = store.take_roadmap_item_composite(input).unwrap();
+        assert!(!result.plan_item_reused);
+        assert!(!result.link_reused);
+
+        let saved_item = store.get_plan_item(result.plan_item_id).unwrap();
+        assert!(saved_item.is_some(), "plan_item should exist");
+        let saved_link = store.get_roadmap_plan_link(result.link_id).unwrap();
+        assert!(saved_link.is_some(), "link should exist");
+        let checkpoints = store
+            .list_checkpoints_by_plan_item(result.plan_item_id)
+            .unwrap();
+        assert_eq!(checkpoints.len(), 1, "checkpoint should exist");
+
+        let saved_ri = store.get_roadmap_item(item.id).unwrap().unwrap();
+        assert_eq!(
+            saved_ri.status,
+            adiyutant_core::model::roadmap::RoadmapItemStatus::Active,
+            "item should be activated"
+        );
+    }
+
+    #[test]
+    fn take_item_composite_idempotent() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let item = make_roadmap_item(phase.id);
+        store.insert_roadmap_item(&item).unwrap();
+
+        let daily_log = DailyLog::new(NaiveDate::from_ymd_opt(2026, 6, 20).unwrap());
+        let plan_item = PlanItem::new(daily_log.id, "Idempotent item".into());
+        let checkpoint = TaskCheckpoint::new(plan_item.id, CheckpointKind::StartCheck);
+        let link = RoadmapPlanLink::new(item.id, plan_item.id);
+
+        let input = TakeRoadmapItemInput {
+            roadmap_item_id: item.id,
+            target_date: NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
+            daily_log_to_create: Some(daily_log),
+            plan_item,
+            initial_checkpoint: checkpoint,
+            link,
+            activate_item: false,
+        };
+
+        let result1 = store.take_roadmap_item_composite(input).unwrap();
+        assert!(!result1.plan_item_reused);
+        let plan_item_id = result1.plan_item_id;
+
+        let link2 = RoadmapPlanLink::new(item.id, plan_item_id);
+        let input2 = TakeRoadmapItemInput {
+            roadmap_item_id: item.id,
+            target_date: NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
+            daily_log_to_create: None,
+            plan_item: store.get_plan_item(plan_item_id).unwrap().unwrap(),
+            initial_checkpoint: TaskCheckpoint::new(plan_item_id, CheckpointKind::ProgressCheck),
+            link: link2,
+            activate_item: false,
+        };
+
+        let result2 = store.take_roadmap_item_composite(input2).unwrap();
+        assert!(result2.plan_item_reused, "should reuse plan_item");
+        assert!(result2.link_reused, "should reuse link");
+    }
+
+    #[test]
+    fn take_item_activates_item() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let phase = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&phase).unwrap();
+        let mut item = make_roadmap_item(phase.id);
+        item.status = adiyutant_core::model::roadmap::RoadmapItemStatus::Planned;
+        store.insert_roadmap_item(&item).unwrap();
+
+        let log = make_daily_log("2026-06-20");
+        store.insert_daily_log(&log).unwrap();
+        let plan_item = PlanItem::new(log.id, "Activate test".into());
+        let checkpoint = TaskCheckpoint::new(plan_item.id, CheckpointKind::StartCheck);
+        let link = RoadmapPlanLink::new(item.id, plan_item.id);
+
+        let input = TakeRoadmapItemInput {
+            roadmap_item_id: item.id,
+            target_date: NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
+            daily_log_to_create: None,
+            plan_item,
+            initial_checkpoint: checkpoint,
+            link,
+            activate_item: true,
+        };
+
+        store.take_roadmap_item_composite(input).unwrap();
+        let saved = store.get_roadmap_item(item.id).unwrap().unwrap();
+        assert_eq!(
+            saved.status,
+            adiyutant_core::model::roadmap::RoadmapItemStatus::Active,
+            "item should transition from planned to active"
+        );
+    }
+
+    // ── FK enforcement (referential integrity) ──
+
+    #[test]
+    fn foreign_key_enforcement_rejects_orphan_roadmap() {
+        let store = setup();
+        let fake_project_id = Id::<Project>::new();
+        let r = Roadmap::new("orphan-roadmap".into(), fake_project_id, "Orphan".into());
+        let result = store.insert_roadmap(&r);
+        assert!(
+            result.is_err(),
+            "FK should reject roadmap with non-existent project_id"
+        );
+    }
+
+    #[test]
+    fn foreign_key_enforcement_rejects_orphan_phase() {
+        let store = setup();
+        let fake_roadmap_id = Id::<Roadmap>::new();
+        let ph = RoadmapPhase::new("orphan-phase".into(), fake_roadmap_id, "Orphan".into(), 0);
+        let result = store.insert_roadmap_phase(&ph);
+        assert!(
+            result.is_err(),
+            "FK should reject phase with non-existent roadmap_id"
+        );
+    }
+
+    #[test]
+    fn foreign_key_enforcement_rejects_orphan_item() {
+        let store = setup();
+        let fake_phase_id = Id::<RoadmapPhase>::new();
+        let item = RoadmapItem::new("orphan-item".into(), fake_phase_id, "Orphan".into());
+        let result = store.insert_roadmap_item(&item);
+        assert!(
+            result.is_err(),
+            "FK should reject item with non-existent phase_id"
+        );
+    }
+
+    #[test]
+    fn foreign_key_enforcement_rejects_orphan_link() {
+        let store = setup();
+        let fake_item_id = Id::<RoadmapItem>::new();
+        let fake_pi_id = Id::<PlanItem>::new();
+        let link = RoadmapPlanLink::new(fake_item_id, fake_pi_id);
+        let result = store.insert_roadmap_plan_link(&link);
+        assert!(
+            result.is_err(),
+            "FK should reject link with non-existent roadmap_item_id or plan_item_id"
+        );
+    }
+
+    #[test]
+    fn take_item_composite_rollback_on_fk_violation() {
+        let store = setup();
+        let p = make_project();
+        store.insert_project(&p).unwrap();
+        let r = make_roadmap(p.id);
+        store.insert_roadmap(&r).unwrap();
+        let ph = make_roadmap_phase(r.id);
+        store.insert_roadmap_phase(&ph).unwrap();
+        let item = make_roadmap_item(ph.id);
+        store.insert_roadmap_item(&item).unwrap();
+
+        let date = NaiveDate::from_ymd_opt(2026, 6, 25).unwrap();
+
+        // PlanItem with non-existent daily_log_id, no daily_log_to_create
+        let bad_pi = PlanItem::new(Id::<DailyLog>::new(), "Bad".into());
+        let cp = TaskCheckpoint::new(bad_pi.id, CheckpointKind::StartCheck);
+        let link = RoadmapPlanLink::new(item.id, bad_pi.id);
+
+        let input = TakeRoadmapItemInput {
+            roadmap_item_id: item.id,
+            target_date: date,
+            daily_log_to_create: None,
+            plan_item: bad_pi.clone(),
+            initial_checkpoint: cp,
+            link,
+            activate_item: false,
+        };
+
+        let result = store.take_roadmap_item_composite(input);
+        assert!(
+            result.is_err(),
+            "should fail: FK violation on plan_items.daily_log_id"
+        );
+
+        // Verify no partial data persisted after rollback
+        assert!(
+            store.get_plan_item(bad_pi.id).unwrap().is_none(),
+            "no plan_item should exist after rollback"
+        );
+        assert!(
+            store
+                .list_roadmap_plan_links_by_roadmap_item(item.id)
+                .unwrap()
+                .is_empty(),
+            "no links should exist after rollback"
         );
     }
 }

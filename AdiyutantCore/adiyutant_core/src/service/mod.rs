@@ -5,6 +5,9 @@ mod checkpoints;
 mod helpers;
 mod journal;
 mod planning;
+pub mod projects;
+pub mod roadmap;
+pub mod selectors;
 mod suggestions;
 mod today;
 
@@ -13,11 +16,17 @@ pub mod tests;
 
 use std::path::Path;
 
+use chrono::NaiveDate;
+
 use crate::bundle::bundle_models::ImportMode;
 use crate::bundle::dto::{
     BundleApplyReportDto, BundleExportReportDto, BundlePreviewDto, BundleValidationReportDto,
 };
 use crate::bundle::source::BundleSource;
+use crate::dto::{
+    ProjectDetailDto, ProjectDto, RoadmapDetailDto, RoadmapDto, RoadmapItemDto,
+    RoadmapTakeItemResultDto,
+};
 use crate::error::{CoreError, CoreResult};
 use crate::store::Store;
 use crate::time_provider::{RealTimeProvider, TimeProvider};
@@ -76,5 +85,35 @@ impl AdiyutantCoreService {
 
     pub fn export_bundle(&self, target: &Path) -> CoreResult<BundleExportReportDto> {
         self.bundle.export_bundle(target, &*self.store)
+    }
+
+    // ── Project/Roadmap operations ──
+
+    pub fn list_projects(&self) -> CoreResult<Vec<ProjectDto>> {
+        projects::list_projects(&*self.store)
+    }
+
+    pub fn get_project(&self, slug: &str) -> CoreResult<ProjectDetailDto> {
+        projects::get_project(&*self.store, slug)
+    }
+
+    pub fn list_roadmaps(&self, project_slug: Option<&str>) -> CoreResult<Vec<RoadmapDto>> {
+        roadmap::list_roadmaps(&*self.store, project_slug)
+    }
+
+    pub fn get_roadmap(&self, selector: &str) -> CoreResult<RoadmapDetailDto> {
+        roadmap::get_roadmap(&*self.store, selector)
+    }
+
+    pub fn list_roadmap_items(&self, selector: &str) -> CoreResult<Vec<RoadmapItemDto>> {
+        roadmap::list_roadmap_items(&*self.store, selector)
+    }
+
+    pub fn take_roadmap_item(
+        &self,
+        item_selector: &str,
+        target_date: NaiveDate,
+    ) -> CoreResult<RoadmapTakeItemResultDto> {
+        roadmap::take_roadmap_item(&*self.store, item_selector, target_date)
     }
 }
