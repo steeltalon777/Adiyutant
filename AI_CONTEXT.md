@@ -10,10 +10,13 @@ v0.4.0-ready. Core hardened: service facade split into 10 modules, DTO contract 
 - `AdiyutantCore/adiyutant_store` — `SqliteStore` with 15 tables, versioned migrations, 7 composite transactions
 - `AdiyutantCore/adiyutant_cli` — 15 commands (`today`, `log`, `checkin`, `startup`, `current`, `checklist`, `plan`, `habit`, `timer`, `reminder`, `alarm`, `context`, `suggest`, `journal`, `waiting`)
 - `docs/contracts/examples/` — 7 golden JSON contract examples
+- `AdiyutantAndroid/` — Phase 9 Android shell bootstrap: Kotlin + Compose + Material 3 (infrastructure only), Navigation Compose 5-tab shell (Сегодня / План / Проекты / Время / Настройки), Adiyutant UI Kit dark theme tokens, `CorePort` boundary + `FakeCorePort` (sample data, no Rust). See `docs/adr/ADR-0002-android-bootstrap-stack.md` and `docs/adr/ADR-0003-android-core-integration-spike.md`.
 
 ## Not Yet Implemented
 
-- UI clients (Android, Web, Desktop)
+- Full screen implementations from design prototypes (design system being finalized)
+- Android ↔ Rust Core integration (decided by ADR-0003 spike)
+- AdiyutantWeb, AdiyutantDesktop
 - Agent Gateway (except `LocalRuleAgentGateway`)
 - External LLM integration
 - Backend / sync server

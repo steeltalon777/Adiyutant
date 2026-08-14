@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Adiyutant placeholder launcher mark: a filled circle accent dot -->
+    <path
+        android:fillColor="#2F80FF"
+        android:pathData="M12,3 L21,12 L12,21 L3,12 Z" />
+    <path
+        android:fillColor="#0A121B"
+        android:pathData="M12,7 L17,12 L12,17 L7,12 Z" />
+</vector>

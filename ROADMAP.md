@@ -118,3 +118,40 @@ Goal: Synchronize documentation with v0.3.0 reality, fix ignored Store errors, c
 - [x] 7 golden JSON contract examples with deserialization tests
 
 **Phase 8 complete.** Core hardened for Android consumption.
+
+## Phase 9 — Android Shell Bootstrap [x] In Progress → Slice 1–5 Done
+
+Goal: Create a buildable `AdiyutantAndroid/` Gradle project with a Compose theme, a 5-tab navigation shell, stub screens, and a `CorePort`/`FakeCorePort` boundary. UI and Rust integration evolve independently (ADR-0002, ADR-0003). The design system and full screen implementations come later.
+
+### Slice 1: Docs, Policy & ADR [x] Done
+- [x] Allow Android Kotlin code in `AdiyutantAndroid/` in `AGENTS.md` (Phase 9 scope)
+- [x] ADR-0002: Android bootstrap stack (Kotlin, Compose, Material 3 as infrastructure, Navigation Compose, ViewModel, CorePort/FakeCorePort)
+- [x] ADR-0003: Android ↔ Rust Core integration spike-first (UniFFI preferred candidate, gated on spike)
+- [x] Decompose `TASK-0019` into sub-tasks in `TASKS.md`
+
+### Slice 2: Gradle Project Bootstrap [x] Done
+- [x] Root `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`, Gradle wrapper
+- [x] `app/` module with Compose + Material 3 + Navigation Compose dependencies
+- [x] `AndroidManifest.xml`, `MainActivity`, `Application` class
+- [x] App builds successfully (`./gradlew assembleDebug`)
+
+### Slice 3: Theme / Adiyutant UI Kit Tokens [x] Done
+- [x] `ui/theme/Color.kt`, `Type.kt`, `Shape.kt`, `AdiyutantTheme.kt` from `docs/design/today-screen.html` tokens
+- [x] Dark theme only; light theme deferred until the design system finalizes
+
+### Slice 4: Navigation Shell + Stub Screens [x] Done
+- [x] Navigation Compose graph with 5 destinations: Сегодня / План / Проекты / Время / Настройки
+- [x] Bottom navigation bar matching the tab design
+- [x] Stub screen composables for all 5 tabs
+
+### Slice 5: CorePort + FakeCorePort [x] Done
+- [x] `CorePort` interface (repository-style boundary, suspend functions returning UI models)
+- [x] `FakeCorePort` with sample data; wired via manual DI / ServiceLocator
+- [x] No Rust dependency; real integration deferred (ADR-0003)
+
+### Slice 6: Verification [x] Done
+- [x] `./gradlew build` green
+- [x] Emulator smoke test: app launches, 5 tabs navigate, theme renders
+- [x] Documentation sync: `AGENTS.md`, `TASKS.md`, `AI_CONTEXT.md`
+
+**Phase 9 scope guard:** full screen implementations, Core DTO extensions, and Android ↔ Rust integration are out of scope here (recorded in `AGENTS.md`).

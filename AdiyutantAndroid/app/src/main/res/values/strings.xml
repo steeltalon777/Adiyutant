@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Adiyutant</string>
+
+    <string name="tab_today">Сегодня</string>
+    <string name="tab_plan">План</string>
+    <string name="tab_projects">Проекты</string>
+    <string name="tab_time">Время</string>
+    <string name="tab_settings">Настройки</string>
+
+    <string name="stub_placeholder">Экран в разработке</string>
+</resources>

@@ -19,6 +19,8 @@ AdiyutantCore (Rust, local-first)
 
 **MVP 0.1 completed, v0.2.0 — Core Service Facade & Android Readiness.** 148 tests passing. Core implemented with 3 Rust crates, SQLite persistence, CLI with 15 commands, service facade layer for Android consumption.
 
+**Phase 9 — Android shell bootstrap (in progress).** `AdiyutantAndroid/` is a buildable Gradle project: Kotlin + Compose, Material 3 as component infrastructure, Adiyutant UI Kit dark theme, 5-tab Navigation Compose shell with stub screens, `CorePort` boundary with `FakeCorePort` (sample data, no Rust dependency). See `docs/adr/ADR-0002-android-bootstrap-stack.md` and `docs/adr/ADR-0003-android-core-integration-spike.md`.
+
 ### Implemented
 
 ```
@@ -96,7 +98,7 @@ Backend owns (planned, not implemented):
 
 ## Known Unknowns
 
-- Android-Core integration mechanism
+- Android-Core integration mechanism (spike in progress — see ADR-0003; UniFFI preferred candidate)
 - Desktop technology choice
 - Web integration method
 - Agent Gateway implementation choice

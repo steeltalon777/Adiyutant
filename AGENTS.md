@@ -13,10 +13,21 @@ Complete the current task without exceeding its scope. Do not add unrequested fe
 ## Allowed Changes
 
 - Rust source code in `AdiyutantCore/` workspace
+- Android Kotlin/Compose source code in `AdiyutantAndroid/`, **scoped to Phase 9** (see `ROADMAP.md`):
+  - Gradle project bootstrap and build files
+  - Compose theme / Adiyutant UI Kit tokens
+  - Navigation shell with 5 tabs and stub screens
+  - `CorePort` interface and `FakeCorePort` implementation
+  - `CorePort`-based feature code
 - Documentation files (markdown)
 - Directory structure
 - `.gitignore`
 - `docs/adr/` files when explicitly requested
+
+Out of scope until a later phase (recorded in `ROADMAP.md`):
+- Full screen implementations from the design prototypes (design system still being finalized)
+- Extending Core DTOs to match every design element
+- Android ↔ Rust Core integration (see ADR-0003; UI works against `FakeCorePort` meanwhile)
 
 ## Forbidden Changes
 
