@@ -9,4 +9,9 @@
     <string name="tab_settings">Настройки</string>
 
     <string name="stub_placeholder">Экран в разработке</string>
+
+    <!-- Phase 2: временные заглушки экранов Today/Plan и host общих листов -->
+    <string name="today_screen_placeholder">Экран «Сегодня» в разработке</string>
+    <string name="plan_screen_placeholder">Экран «План» в разработке</string>
+    <string name="sheet_host_placeholder">Лист в разработке (Phase 3A)</string>
 </resources>
