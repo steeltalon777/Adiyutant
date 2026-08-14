@@ -34,6 +34,10 @@ val AccentOrangeDeep = Color(0xFF3D2A0F)
 val AccentPurple = Color(0xFFA660FF)
 val AccentPurpleDeep = Color(0xFF26183D)
 
+// Danger (ТЗ 12.1: только перегруз/ошибки, не для обычного опоздания)
+val AccentRed = Color(0xFFFF4D4D)
+val AccentRedDeep = Color(0xFF3D1414)
+
 // Component-tinted backgrounds used by cards in the design
 val PurpleCardStart = Color(0xFF1A1330)
 val PurpleCardEnd = Color(0xFF141B2E)

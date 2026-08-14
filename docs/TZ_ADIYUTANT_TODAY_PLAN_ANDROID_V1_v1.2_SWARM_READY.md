@@ -30,17 +30,23 @@
 - [x] 0. Контекст сверен: App.jsx, DESIGN.md, MEMORY.md, текущий Android-проект, ADR-0002/0003/0004, ROADMAP; файл `docs/adr/ADR-0004-android-local-planner-domain.md` реально существует
 - [x] 1. Phase 1 — domain-модель, `PlannerCore` (reducer), `ScheduleValidator`, `TimeMath`, `Clock`, seed-данные, in-memory репозиторий
 - [x] 2. Phase 2 — `PlannerViewModel` (StateFlow), hoisting в `AppShell`, изменение сигнатуры `AppNavGraph`, host общих листов, обновление smoke-теста
-- [ ] 3. Phase 3A → 3B — сначала одним writer-ом заморозить `ui/common/` (`ScheduleSheet`, `TaskDetailsSheet`, controls), затем Plan v1: День/Неделя/Бэклог, Plan Agent
-- [ ] 4. Phase 4 — Today v1: hero state machine, KPI, Check-in, Mode, Progress, Top 3, Quick Note, Agent, все Today-листы; после gate Phase 3A может выполняться параллельно с Phase 3B
+- [x] 2.1. Review fixes Phase 0–2 (после ревью): инвариант END_DAY cancel восстанавливает `EndDaySheet`, план-факт разделение закрыто тестами, единая формула elapsed, smoke-тест обновлён
+- [x] 3A. **Phase 3A — Shared UI gate (ACCEPTED AND FROZEN, 2026-08-14).** `ui/common/` (AdiyutantSheet, Label, SegmentedControl, EmojiScale, MoodPicker, KpiMini, Chip, ScheduleSheet, TaskDetailsSheet, ScheduleSheetLogic) реализован; публичные сигнатуры заморожены; `collectAsStateWithLifecycle` во всех потребителях state; `rememberSaveable` в ScheduleSheet привязан к identity `ScheduleRequest` (form-state изоляция). Сквозные контракты `PlannerState`/`PlannerEvent`/`ScheduleRequest`/`PlannerCore`/`PlannerRepository`/`PlannerViewModel` остаются замороженными от Phase 2.1.
+- [ ] 3B. Phase 3B — Plan v1: День/Неделя/Бэклог, DayPickerStrip, Workload, Timeline, PlanAgentCard; **read-only** для domain/, data/, ui/planner/, ui/common/, ui/shell/, ui/navigation/, core/. Любая правка замороженного файла — отдельный change request
+- [ ] 4. Phase 4 — Today v1: hero state machine, KPI, Check-in, Mode, Progress, Top 3, Quick Note, Agent, все Today-листы; после gate Phase 3A может выполняться параллельно с Phase 3B; **read-only** те же каталоги. `PlannerEvent.OpenCompletionSheet(blockId)` уже реализован и принят в Phase 2.1 (PlannerCore.kt:188–194; принимает только при наличии активной PLANNED-сессии для этого блока; `progressPercent < 100`); `completionConfirmed` принимается из `BlockEndedSheet` или `CompletionSheet` (PlannerCore.kt:201–205); покрыто `PlannerCoreStateMachineTest` (6 тестов). Phase 4 использует frozen event/API без дополнительных prerequisites
 - [ ] 5. Phase 5 — кросс-экранные сценарии: «Делаю другое» (двухшаговый), End of Day → ScheduleSheet, Agent-навигация, синхронизация Today ↔ Plan
-- [ ] 6. Phase 6 — визуальная доводка по DESIGN.md (токены, градиенты, отступы, insets, touch targets ≥44dp)
-- [x] 7. Unit-тесты domain-инвариантов, машины состояний, планирования, End of Day, Plan vs Fact (`./gradlew testDebugUnitTest`) — 98 domain/shell-тестов + 2 регрессионных, зелёные
-- [ ] 8. `./gradlew assembleDebug` зелёный (выполнено); `./gradlew build` зелёный — **не выполнялся** (после Phase 2; эмулятор и полный build — в Phase 7)
-- [ ] 9. Smoke на эмуляторе: запуск, 5 вкладок, навигация не сбрасывает активную сессию — **не выполнялся** (эмулятор недоступен в окружении)
-- [ ] 10. User-сценарии по чек-листу приёмки (раздел 14)
-- [ ] 11. Регрессия: `FakeCorePortTest`, обновлённый `AppShellSmokeTest` зелёные
-- [ ] 12. Документация: таблица доказательств заполнена, дрейфы зафиксированы
-- [ ] 13. Финальный acceptance review по evidence table
+- [ ] 6. Phase 6 — визуальная доводка по DESIGN.md (токены, градиенты, отступы, insets, touch targets ≥44dp, hardcoded `–` в ScheduleSheet, accessibility-state confirm-кнопки)
+- [x] 7. Unit-тесты (`./gradlew testDebugUnitTest`) — **118 / 118, 0 failures, 0 errors, 0 skipped** на момент закрытия Phase 3A. Распределение: PlannerCoreStateMachine 28, ScheduleSheetContract 11, EndOfDay 11, TimeMath 11, DoSomethingElse 10, ScheduleSheetLogic 9, AgentInsight 9, ElapsedTime 7, SingleEntityRule 6, QuickNote 6, WorkloadDerivation 5, AppShellSmoke 3, FakeCorePort 2
+- [x] 8. `./gradlew compileDebugKotlin` — **PASS**; `./gradlew assembleDebug` — **PASS** (APK собран). `./gradlew build` (полный, со всеми вариантами и проверками) — **НЕ ВЫПОЛНЕН** (Phase 7)
+- [ ] 9. Smoke на эмуляторе: запуск, 5 вкладок, навигация не сбрасывает активную сессию — **НЕ ВЫПОЛНЕН** (эмулятор недоступен в окружении; остаётся Phase 7). Реальный Compose UI test (scrim, BackHandler LIFO, form-state isolation) — **НЕ ВЫПОЛНЕН**
+- [ ] 10. User-сценарии по чек-листу приёмки (раздел 14) — сценарии C1–C10 на эмуляторе; ожидает Phase 7
+- [ ] 11. Регрессия: `FakeCorePortTest` зелёный; `AppShellSmokeTest` зелёный (но это JVM-статический тест, **НЕ реальный Compose UI smoke** — для Phase 7 требуется androidTest)
+- [ ] 12. Документация: таблица доказательств заполнена (см. §14.3, ниже); дрейфы зафиксированы в ADR-0004
+- [ ] 13. Финальный acceptance review по evidence table — Phase 7
+
+**Phase 3A — принято и заморожено.** См. §13.1 (структура файлов) и §15 (Phase 3A gate). Дальнейшие изменения `ui/common/*`, `domain/*`, `data/*`, `ui/planner/*`, `ui/shell/*`, `ui/navigation/*`, `core/*` — только через integrator с явным change request.
+
+**Известно stale:** finding W3 из пред-Phase 3A ревью (отмена ScheduleSheet с purpose=END_DAY не восстанавливает EndDaySheet) — **НЕ подтверждается**. `PlannerCore.cancelSheet` (PlannerCore.kt:437–449) уже обрабатывает `sheet.request.purpose == SchedulePurpose.END_DAY` отдельной веткой: возвращает `EndDaySheet`, оставляет `dayPhase = END_OF_DAY`, очищает `pendingDoElse`. Покрыто `EndOfDayTest.cancelEndDayScheduleRestoresEndDaySheetLossless` и `cancelEndDayScheduleKeepsActiveSessionAndSourceBlock`.
 
 ---
 
@@ -1074,22 +1080,42 @@ Stand: Android-эмулятор (API ≥ 26), сборка из `AdiyutantAndroi
 
 ### 14.3 Evidence table (заполняет исполнитель)
 
+**Phase 3A checkpoint (2026-08-14):**
+
 | Check | Command / Tool | Result | Evidence |
 |---|---|---|---|
-| Unit tests | `./gradlew testDebugUnitTest` | pass/fail/skipped | путь к отчёту |
-| Build | `./gradlew assembleDebug` | pass/fail/skipped | лог сборки |
-| Full build | `./gradlew build` | pass/fail/skipped | лог |
-| Stand smoke | эмулятор, ручной чек-лист | pass/fail/skipped | скриншоты/описание |
-| User scenarios | C1–C10 + EOD на эмуляторе | pass/fail/skipped | описание/скриншоты |
-| Regression | `FakeCorePortTest`, `AppShellSmokeTest` | pass/fail/skipped | лог |
+| Unit tests | `./gradlew testDebugUnitTest --rerun-tasks` | **PASS — 118/118, 0 failures, 0 errors, 0 skipped** | `AdiyutantAndroid/app/build/test-results/testDebugUnitTest/*.xml` (13 suites: PlannerCoreStateMachine 28, ScheduleSheetContract 11, EndOfDay 11, TimeMath 11, DoSomethingElse 10, ScheduleSheetLogic 9, AgentInsight 9, ElapsedTime 7, SingleEntityRule 6, QuickNote 6, WorkloadDerivation 5, AppShellSmoke 3, FakeCorePort 2) |
+| Kotlin compile | `./gradlew compileDebugKotlin` | **PASS** | `BUILD SUCCESSFUL`, 0 warnings |
+| Debug APK | `./gradlew assembleDebug` | **PASS** | `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk` собран |
+| Full build | `./gradlew build` | **NOT DONE** (Phase 7) | — |
+| Stand smoke (emulator) | manual | **NOT DONE** (Phase 7 — эмулятор недоступен в среде) | — |
+| Compose UI test (scrim/BackHandler LIFO/form isolation) | androidTest | **NOT DONE** (Phase 7) | — |
+| User scenarios C1–C10 | emulator | **NOT DONE** (Phase 7) | — |
+| Regression — `FakeCorePortTest` | JVM unit | **PASS** (2/2) | `app/build/test-results/testDebugUnitTest/TEST-com.adiyutant.app.core.fake.FakeCorePortTest.xml` |
+| Regression — `AppShellSmokeTest` | JVM unit | **PASS** (3/3) | `app/build/test-results/testDebugUnitTest/TEST-com.adiyutant.app.ui.shell.AppShellSmokeTest.xml`. **Замечание:** это JVM-тест со статическими проверками (Destinations.routes, размеры seed), **НЕ реальный Compose UI smoke**. Реальный shell-render test — Phase 7. |
+
+**Phase 2.1 freeze (commit `e51e55b`, tag `adiyutant-planner-phase2.1`):**
+
+| Check | Result |
+|---|---|
+| Unit tests | PASS — 109/109 |
+| Domain contracts frozen | `PlannerState`, `PlannerEvent`, `ScheduleRequest`, `PlannerCore`, `PlannerRepository`, `PlannerViewModel` не менялись после freeze |
+| ТЗ checklist 7 | 100 тестов → 109 (после добавления `cancelEndDayScheduleRestoresEndDaySheetLossless`, `cancelEndDayScheduleKeepsActiveSessionAndSourceBlock`, `plainScheduleCancelClosesSheetWithoutEndDayRestore`, и др.) |
+
+**Phase 3A residual / known issues:**
+
+- **NOT DONE:** Phase 3B (Plan v1), Phase 4 (Today v1), Phase 5 (cross-screen), Phase 6 (visual polish), Phase 7 (acceptance/build + emulator smoke + TalkBack/accessibility).
+- **Stale W3:** finding пред-Phase 3A ревью про восстановление `EndDaySheet` после cancel ScheduleSheet(purpose=END_DAY) — **НЕ подтверждается**. `PlannerCore.cancelSheet` уже обрабатывает purpose=END_DAY (PlannerCore.kt:442–444); покрыто `EndOfDayTest.cancelEndDayScheduleRestoresEndDaySheetLossless`.
+- **OpenCompletionSheet contract:** `PlannerEvent.OpenCompletionSheet(blockId)` реализован и принят в Phase 2.1 (PlannerCore.kt:188–194). Guard: блок существует, `progressPercent < 100`, активная сессия PLANNED для этого `blockId`. `completionConfirmed` принимается из `BlockEndedSheet` или `CompletionSheet` (PlannerCore.kt:201–205). Покрыто `PlannerCoreStateMachineTest.openCompletionSheetOpensForValidUnfinishedBlock`, `openCompletionSheetIsNoOpForUnknownBlock`, `openCompletionSheetIsNoOpForCompletedBlock`, `openCompletionSheetIsNoOpForIncompleteBlockWithoutSession`, `openCompletionSheetIsNoOpForIncompleteBlockWithOtherActiveSession`, `completionConfirmedWorksFromCompletionSheet`. Phase 4 использует frozen event/API без дополнительных prerequisites.
 
 ## 15. Implementation phases
 
 | Фаза | Содержание | Критерий выхода |
 |---|---|---|
 | **Phase 1 — domain/state** | Все модели `domain/model/`, `PlannerCore` со всеми переходами (разделы 3, 4, 7.2, 10, 11), `ScheduleValidator`, `TimeMath`, `Clock`, `data/` (репозиторий + seed), расширение `ServiceLocator` | Unit-тесты Phase 1 зелёные: инварианты, машина состояний, ScheduleSheet contract, EOD, elapsed, single-entity |
-| **Phase 2 — navigation shell** | `PlannerViewModel`, удаление старого `TodayViewModel`, hoisting в `AppShell`, `AppNavGraph(navController, planner, onNavigate)`, host общих листов (пустые заглушки), обновление `AppShellSmokeTest`, новые строки в `strings.xml` | `assembleDebug` зелёный; приложение запускается; 5 вкладок; smoke-тест зелёный |
-| **Phase 3A — shared UI gate** | Один writer реализует `ui/common/` (AdiyutantSheet, Label, SegmentedControl, EmojiScale, MoodPicker, KpiMini, Chip), `ScheduleSheet`, `TaskDetailsSheet`; публичные параметры/события фиксируются и после gate считаются read-only для экранных агентов | `assembleDebug` зелёный; ScheduleSheet/TaskDetails contracts покрыты тестами; API `ui/common/` заморожен |
+| **Phase 2 — navigation shell** *(ACCEPTED 2026-08-14, freeze `e51e55b`, tag `adiyutant-planner-phase2.1`)* | `PlannerViewModel`, удаление старого `TodayViewModel`, hoisting в `AppShell`, `AppNavGraph(navController, planner, onNavigate)`, host общих листов (пустые заглушки), обновление `AppShellSmokeTest`, новые строки в `strings.xml` | `assembleDebug` зелёный; приложение запускается; 5 вкладок; smoke-тест зелёный (109 unit-тестов на момент freeze) |
+| **Phase 2.1 — review fixes** *(в составе freeze `e51e55b`)* | `PlannerCore.cancelSheet` восстанавливает `EndDaySheet` для ScheduleSheet(purpose=END_DAY); `dayPhase` сохраняется END_OF_DAY; `pendingDoElse` сбрасывается; Plan/Fact разделение закрыто тестами | `cancelEndDayScheduleRestoresEndDaySheetLossless`, `cancelEndDayScheduleKeepsActiveSessionAndSourceBlock`, `plainScheduleCancelClosesSheetWithoutEndDayRestore` |
+| **Phase 3A — shared UI gate** *(ACCEPTED AND FROZEN 2026-08-14)* | Один writer реализует `ui/common/` (AdiyutantSheet, Label, SegmentedControl, EmojiScale, MoodPicker, KpiMini, Chip), `ScheduleSheet`, `TaskDetailsSheet`; публичные параметры/события фиксируются и после gate считаются read-only для экранных агентов | `assembleDebug` зелёный; ScheduleSheet/TaskDetails contracts покрыты тестами (118/118 unit); API `ui/common/` заморожен; `collectAsStateWithLifecycle` во всех 3 потребителях state; `ScheduleSheet.rememberSaveable` ключуется по identity `ScheduleRequest` (form-state isolation) |
 | **Phase 3B — Plan** | `PlanScreen` + все view (Header, Day, Week, Backlog, DayPickerStrip, Workload, Timeline), `PlanAgentCard`; может выполняться параллельно с Phase 4 после gate 3A | Сценарии P1–P10 и ScheduleSheet-контракт работают на эмуляторе; проекции бэклога без фантомных задач; Plan-юниты зелёные |
 | **Phase 4 — Today** | `TodayScreen` + Header, KpiRow, HeroCard (все 9 вариантов), AgentCard, TopThreeSection, QuickNoteSection, 9 Today-листов; может выполняться параллельно с Phase 3B после gate 3A | Машина состояний (7.2) и все Today-действия работают; Today-юниты зелёные |
 | **Phase 5 — integration** | Двухшаговый «Делаю другое» с pendingDoElse, EOD → ScheduleSheet (purpose=END_DAY), закрытие сессий при EOD (нормализация), Agent-навигация, CTA «Открыть в Сегодня» (TaskDetailsSheet при активной сессии), проверка C1–C10 | C1–C10 проходят на эмуляторе |

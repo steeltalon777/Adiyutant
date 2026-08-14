@@ -15,17 +15,23 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.adiyutant.app.R
+import com.adiyutant.app.domain.blocksOn
+import com.adiyutant.app.domain.model.ActiveKind
 import com.adiyutant.app.domain.model.PlannerEvent
+import com.adiyutant.app.domain.model.PlannerState
 import com.adiyutant.app.domain.model.SheetState
+import com.adiyutant.app.ui.common.ScheduleSheet
+import com.adiyutant.app.ui.common.TaskDetailsSheet
 import com.adiyutant.app.ui.navigation.AppNavGraph
 import com.adiyutant.app.ui.navigation.Destinations
 import com.adiyutant.app.ui.planner.PlannerViewModel
@@ -40,7 +46,8 @@ import com.adiyutant.app.ui.theme.Surface2
  * Hoists единственный [PlannerViewModel] на Activity scope: Today и Plan
  * получают один и тот же экземпляр, переключение вкладок не сбрасывает
  * состояние и активную сессию. Общие листы ([SheetState]) рендерятся поверх
- * [AppNavGraph] здесь; в v1 это заглушка, контент приходит в Phase 3A.
+ * [AppNavGraph] здесь (Phase 3A: ScheduleSheet, TaskDetailsSheet; Today-листы —
+ * Phase 4).
  */
 @Composable
 fun AppShell(
@@ -60,10 +67,12 @@ fun AppShell(
         }
     }
 
-    val state by plannerViewModel.state.collectAsState()
+    val state by plannerViewModel.state.collectAsStateWithLifecycle()
     val sheet = state.sheet
 
     // Системный back закрывает открытый лист без бизнес-мутаций (R5).
+    // Для листов на AdiyutantSheet его перехватывает BackHandler самого листа
+    // (LIFO); этот остаётся запасным для прочих листов.
     BackHandler(enabled = sheet != null) {
         plannerViewModel.dispatch(PlannerEvent.CloseSheet)
     }
@@ -88,25 +97,73 @@ fun AppShell(
                 planner = plannerViewModel,
                 onNavigate = navigateToTab,
             )
-            SheetHostPlaceholder(
+            SheetHost(
                 sheet = sheet,
-                onClose = { plannerViewModel.dispatch(PlannerEvent.CloseSheet) },
+                state = state,
+                dispatch = plannerViewModel::dispatch,
+                onNavigate = navigateToTab,
             )
         }
     }
 }
 
 /**
- * Временный host общих листов (Phase 2): механика готова (scrim, поверх NavHost,
- * lossless close через [onClose]), контент листов придёт в Phase 3A
- * (ScheduleSheet, TaskDetailsSheet) и будет вынесен из этого файла.
+ * Host общих листов (Phase 3A): рендерит [SheetState.ScheduleSheet] и
+ * [SheetState.TaskDetailsSheet]; остальные листы (Today, EOD) приходят
+ * в Phase 4 и пока показываются заглушкой.
  */
 @Composable
-private fun SheetHostPlaceholder(
+private fun SheetHost(
     sheet: SheetState?,
-    onClose: () -> Unit,
+    state: PlannerState,
+    dispatch: (PlannerEvent) -> Unit,
+    onNavigate: (Destinations) -> Unit,
 ) {
-    if (sheet == null) return
+    when (sheet) {
+        is SheetState.ScheduleSheet -> {
+            val request = sheet.request
+            ScheduleSheet(
+                request = request,
+                today = state.todayDate,
+                task = request.taskId?.let { id -> state.tasks.firstOrNull { it.taskId == id } },
+                block = request.blockId?.let { id -> state.blocks.firstOrNull { it.blockId == id } },
+                blocksOnDate = { date -> blocksOn(state, date) },
+                onConfirm = { date, start, end ->
+                    dispatch(PlannerEvent.ScheduleConfirmed(request, date, start, end))
+                },
+                onClose = { dispatch(PlannerEvent.ScheduleCancelled) },
+            )
+        }
+        is SheetState.TaskDetailsSheet -> {
+            val block = state.blocks.firstOrNull { it.blockId == sheet.blockId }
+            val task = block?.let { b -> state.tasks.firstOrNull { it.taskId == b.taskId } }
+            if (block == null || task == null) return
+            val session = state.activeSession
+            TaskDetailsSheet(
+                block = block,
+                task = task,
+                hasActivePlannedSession = session != null &&
+                    session.kind == ActiveKind.PLANNED &&
+                    session.blockId == sheet.blockId,
+                onReschedule = { sameDateOnly ->
+                    dispatch(PlannerEvent.TaskDetailsReschedule(sameDateOnly))
+                },
+                onComplete = { dispatch(PlannerEvent.TaskDetailsComplete(sheet.blockId)) },
+                onOpenToday = { onNavigate(Destinations.TODAY) },
+                onClose = { dispatch(PlannerEvent.CloseSheet) },
+            )
+        }
+        else -> {
+            if (sheet != null) {
+                SheetPlaceholder(onClose = { dispatch(PlannerEvent.CloseSheet) })
+            }
+        }
+    }
+}
+
+/** Заглушка для листов Phase 4 (CheckIn, Mode, Progress, DoElse, ...). */
+@Composable
+private fun SheetPlaceholder(onClose: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -117,7 +174,7 @@ private fun SheetHostPlaceholder(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(androidx.compose.ui.Alignment.BottomCenter)
+                .align(Alignment.BottomCenter)
                 .navigationBarsPadding(),
             shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
             color = Surface2,

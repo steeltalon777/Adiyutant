@@ -8,11 +8,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.adiyutant.app.R
 import com.adiyutant.app.ui.navigation.Destinations
 import com.adiyutant.app.ui.planner.PlannerViewModel
@@ -30,7 +30,7 @@ fun PlanScreen(
     planner: PlannerViewModel,
     onNavigate: (Destinations) -> Unit,
 ) {
-    val state by planner.state.collectAsState()
+    val state by planner.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier

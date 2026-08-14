@@ -13,5 +13,39 @@
     <!-- Phase 2: временные заглушки экранов Today/Plan и host общих листов -->
     <string name="today_screen_placeholder">Экран «Сегодня» в разработке</string>
     <string name="plan_screen_placeholder">Экран «План» в разработке</string>
-    <string name="sheet_host_placeholder">Лист в разработке (Phase 3A)</string>
+    <string name="sheet_host_placeholder">Лист в разработке</string>
+
+    <!-- Phase 3A: общие компоненты ui/common -->
+    <string name="mood_bad">Плохо</string>
+    <string name="mood_ok">Нормально</string>
+    <string name="mood_good">Хорошо</string>
+
+    <!-- Phase 3A: ScheduleSheet (contract раздел 10 ТЗ) -->
+    <string name="sheet_schedule_title_schedule">Запланировать</string>
+    <string name="sheet_schedule_title_reschedule">Изменить расписание</string>
+    <string name="sheet_date_label">Дата</string>
+    <string name="sheet_free_slots">Свободные слоты</string>
+    <string name="sheet_manual_time">Время вручную</string>
+    <string name="sheet_no_free_slots">Нет свободных слотов</string>
+    <string name="sheet_time_out_of_range">Время должно быть в пределах 09:00–19:00.</string>
+    <string name="sheet_time_overlap">Этот интервал пересекается с другим блоком.</string>
+    <string name="sheet_confirm_schedule">Запланировать</string>
+    <string name="sheet_confirm_save">Сохранить</string>
+    <string name="sheet_confirm_move">Перенести</string>
+    <string name="sheet_today">Сегодня</string>
+    <string name="sheet_tomorrow">Завтра</string>
+    <string name="sheet_date_choice">%1$s · %2$d %3$s</string>
+    <string name="sheet_time_minus_hour">−1ч</string>
+    <string name="sheet_time_minus15">−15</string>
+    <string name="sheet_time_plus15">+15</string>
+    <string name="sheet_time_plus_hour">+1ч</string>
+    <string name="sheet_start_placeholder">09:00</string>
+    <string name="sheet_end_placeholder">10:00</string>
+
+    <!-- Phase 3A: TaskDetailsSheet -->
+    <string name="sheet_task_title">Задача</string>
+    <string name="sheet_task_change_time">Изменить время</string>
+    <string name="sheet_task_move">Перенести</string>
+    <string name="sheet_task_complete">Завершить</string>
+    <string name="sheet_task_open_today">Открыть в Сегодня</string>
 </resources>
